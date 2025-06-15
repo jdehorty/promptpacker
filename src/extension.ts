@@ -23,15 +23,25 @@ interface ProcessedFiles {
   totalSize: number;
   totalFiles: number;
   debugInfo?: FileFilterDebugInfo;
+  fileTree?: DirectoryNode;
 }
 
 interface FileFilterDebugInfo {
   totalFilesScanned: number;
-  includedFiles: Array<{path: string; reason: string}>;
-  excludedFiles: Array<{path: string; reason: string}>;
-  sizeExceededFiles: Array<{path: string; size: number; maxSize: number}>;
-  errors: Array<{path: string; error: string}>;
+  includedFiles: Array<{ path: string; reason: string }>;
+  excludedFiles: Array<{ path: string; reason: string }>;
+  sizeExceededFiles: Array<{ path: string; size: number; maxSize: number }>;
+  errors: Array<{ path: string; error: string }>;
 }
+
+interface DirectoryNode {
+  name: string;
+  type: 'file' | 'directory';
+  path: string;
+  children?: DirectoryNode[];
+}
+
+let lastFilterDebugInfo: FileFilterDebugInfo | undefined;
 
 // ==========================================
 // Main Activation
@@ -54,6 +64,7 @@ export function activate(context: vscode.ExtensionContext) {
   register('promptpacker.viewLogs', handleShowLogs);
   register('promptpacker.exportDebugInfo', handleDebugInfo);
   register('promptpacker.testExtension', handleTest);
+  register('promptpacker.viewLastFilterReport', handleShowLastFilterReport);
 
   console.log('✅ All PromptPacker commands registered successfully');
 }
@@ -163,7 +174,8 @@ async function runPreview(args: any[]) {
       markdownCode,
       processed.totalFiles,
       processed.totalSize,
-      tokenEstimate
+      tokenEstimate,
+      processed.fileTree
     );
   } catch (error) {
     console.error('Error in runPreview:', error);
@@ -237,6 +249,17 @@ async function handleTest() {
   vscode.window.showInformationMessage('🧪 PromptPacker Extension Test - All systems operational!');
 }
 
+function handleShowLastFilterReport() {
+  const workspaceRoot = getWorkspaceRoot() || 'N/A';
+  if (!lastFilterDebugInfo) {
+    vscode.window.showInformationMessage(
+      'No filter report available. Please run a "Pack" or "Preview" command first.'
+    );
+    return;
+  }
+  showDetailedFilteringReport(lastFilterDebugInfo, workspaceRoot);
+}
+
 // ==========================================
 // Core Processing Logic
 // ==========================================
@@ -253,20 +276,25 @@ async function processUris(args: any[], workspaceRoot: string): Promise<Processe
     includedFiles: [],
     excludedFiles: [],
     sizeExceededFiles: [],
-    errors: []
+    errors: [],
   };
 
   for (const uri of uris) {
     try {
       const stats = await fs.promises.stat(uri.fsPath);
       if (stats.isDirectory()) {
-        const folderResult = await traverseFolderWithDebug(uri.fsPath, workspaceRoot, config, debugInfo);
+        const folderResult = await traverseFolderWithDebug(
+          uri.fsPath,
+          workspaceRoot,
+          config,
+          debugInfo
+        );
         allFilePaths.push(...folderResult.files);
       } else {
         debugInfo.totalFilesScanned++;
         const relativePath = path.relative(workspaceRoot, uri.fsPath).replace(/\\/g, '/');
         const decision = shouldIncludeFile(relativePath, config, stats.size);
-        
+
         if (decision.include) {
           allFilePaths.push(uri.fsPath);
           debugInfo.includedFiles.push({ path: relativePath, reason: decision.reason });
@@ -298,7 +326,7 @@ async function processUris(args: any[], workspaceRoot: string): Promise<Processe
         debugInfo.sizeExceededFiles.push({
           path: relativePath,
           size: stats.size,
-          maxSize: maxTotalBytes - currentSize
+          maxSize: maxTotalBytes - currentSize,
         });
       }
     } catch (error) {
@@ -308,11 +336,15 @@ async function processUris(args: any[], workspaceRoot: string): Promise<Processe
     }
   }
 
+  // Store the debug info for later retrieval
+  lastFilterDebugInfo = debugInfo;
+
   return {
     allFilePaths: filteredPaths,
     totalSize,
     totalFiles: filteredPaths.length,
-    debugInfo
+    debugInfo,
+    fileTree: buildFileTree(filteredPaths, workspaceRoot),
   };
 }
 
@@ -470,18 +502,18 @@ function shouldIncludeFile(
   // 1. Check file size limit
   const maxFileBytes = parseSize(config.maxFileSize);
   if (fileSize > maxFileBytes) {
-    return { 
-      include: false, 
-      reason: `File size (${(fileSize / 1024).toFixed(1)} KB) exceeds max size (${config.maxFileSize})`
+    return {
+      include: false,
+      reason: `File size (${(fileSize / 1024).toFixed(1)} KB) exceeds max size (${config.maxFileSize})`,
     };
   }
 
   // 2. Check ignore patterns first - this is a hard "no"
   for (const pattern of config.ignore) {
     if (minimatch(relativePath, pattern, { dot: true })) {
-      return { 
-        include: false, 
-        reason: `Ignored by pattern: "${pattern}"`
+      return {
+        include: false,
+        reason: `Ignored by pattern: "${pattern}"`,
       };
     }
   }
@@ -489,9 +521,9 @@ function shouldIncludeFile(
   // 3. Check for high-priority files - these are almost always relevant
   for (const pattern of config.highPriorityPatterns) {
     if (minimatch(relativePath, pattern, { dot: true })) {
-      return { 
-        include: true, 
-        reason: `High-priority match: "${pattern}"`
+      return {
+        include: true,
+        reason: `High-priority match: "${pattern}"`,
       };
     }
   }
@@ -500,9 +532,9 @@ function shouldIncludeFile(
   if (config.includePatterns.length > 0) {
     for (const pattern of config.includePatterns) {
       if (minimatch(relativePath, pattern, { dot: true })) {
-        return { 
-          include: true, 
-          reason: `Matched include pattern: "${pattern}"`
+        return {
+          include: true,
+          reason: `Matched include pattern: "${pattern}"`,
         };
       }
     }
@@ -511,16 +543,16 @@ function shouldIncludeFile(
   // 5. Check file extension as a fallback
   const fileExtension = getFileExtension(relativePath);
   if (fileExtension && config.includeExtensions.includes(fileExtension)) {
-    return { 
-      include: true, 
-      reason: `Extension ".${fileExtension}" is in include list`
+    return {
+      include: true,
+      reason: `Extension ".${fileExtension}" is in include list`,
     };
   }
 
   // 6. If none of the inclusion criteria are met, exclude the file
-  return { 
-    include: false, 
-    reason: `No matching criteria (extension: .${fileExtension || 'none'}, include patterns: ${config.includePatterns.length}, extensions: ${config.includeExtensions.length})`
+  return {
+    include: false,
+    reason: `No matching criteria (extension: .${fileExtension || 'none'}, include patterns: ${config.includePatterns.length}, extensions: ${config.includeExtensions.length})`,
   };
 }
 
@@ -548,10 +580,12 @@ async function traverseFolderWithDebug(
         // Check if directory should be ignored
         let shouldIgnoreDir = false;
         let ignoreReason = '';
-        
+
         for (const pattern of config.ignore) {
-          if (minimatch(relativePath, pattern, { dot: true }) || 
-              minimatch(relativePath + '/', pattern, { dot: true })) {
+          if (
+            minimatch(relativePath, pattern, { dot: true }) ||
+            minimatch(relativePath + '/', pattern, { dot: true })
+          ) {
             shouldIgnoreDir = true;
             ignoreReason = pattern;
             break;
@@ -561,9 +595,9 @@ async function traverseFolderWithDebug(
         if (shouldIgnoreDir) {
           // Count all files in ignored directory for debug info
           const ignoredCount = await countFilesInDirectory(fullPath);
-          debugInfo.excludedFiles.push({ 
-            path: relativePath + '/', 
-            reason: `Directory ignored by pattern: "${ignoreReason}" (${ignoredCount} files skipped)`
+          debugInfo.excludedFiles.push({
+            path: relativePath + '/',
+            reason: `Directory ignored by pattern: "${ignoreReason}" (${ignoredCount} files skipped)`,
           });
         } else {
           const subResult = await traverseFolderWithDebug(fullPath, root, config, debugInfo);
@@ -574,7 +608,7 @@ async function traverseFolderWithDebug(
         try {
           const stats = await fs.promises.stat(fullPath);
           const decision = shouldIncludeFile(relativePath, config, stats.size);
-          
+
           if (decision.include) {
             results.push(fullPath);
             debugInfo.includedFiles.push({ path: relativePath, reason: decision.reason });
@@ -681,7 +715,61 @@ function getFileExtensionForMarkdown(filePath: string): string {
   return extensionMap[ext] || ext || 'text';
 }
 
-function showDetailedFilteringReport(debugInfo: FileFilterDebugInfo | undefined, workspaceRoot: string) {
+function buildFileTree(filePaths: string[], root: string): DirectoryNode {
+  const rootNode: DirectoryNode = {
+    name: path.basename(root),
+    type: 'directory',
+    path: '',
+    children: [],
+  };
+
+  for (const filePath of filePaths) {
+    const relativePath = path.relative(root, filePath).replace(/\\/g, '/');
+    const parts = relativePath.split('/');
+    let currentNode = rootNode;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isFile = i === parts.length - 1;
+
+      let childNode = currentNode.children?.find(c => c.name === part);
+
+      if (!childNode) {
+        childNode = {
+          name: part,
+          type: isFile ? 'file' : 'directory',
+          path: parts.slice(0, i + 1).join('/'),
+        };
+        if (!isFile) {
+          childNode.children = [];
+        }
+        currentNode.children?.push(childNode);
+      }
+      currentNode = childNode;
+    }
+  }
+
+  // Sort children at each level: directories first, then alphabetically
+  const sortChildren = (node: DirectoryNode) => {
+    if (node.children) {
+      node.children.sort((a, b) => {
+        if (a.type !== b.type) {
+          return a.type === 'directory' ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+      node.children.forEach(sortChildren);
+    }
+  };
+
+  sortChildren(rootNode);
+  return rootNode;
+}
+
+function showDetailedFilteringReport(
+  debugInfo: FileFilterDebugInfo | undefined,
+  workspaceRoot: string
+) {
   if (!debugInfo) {
     vscode.window.showErrorMessage('No files found to pack. Debug information unavailable.');
     return;
@@ -706,7 +794,7 @@ function showDetailedFilteringReport(debugInfo: FileFilterDebugInfo | undefined,
   if (debugInfo.excludedFiles.length > 0) {
     output.appendLine('❌ EXCLUDED FILES:');
     output.appendLine('------------------');
-    
+
     // Group by reason for better readability
     const excludedByReason = new Map<string, string[]>();
     debugInfo.excludedFiles.forEach(file => {
@@ -786,11 +874,9 @@ function getPreviewHtml(
   markdownContent: string,
   fileCount: number,
   totalSize: number,
-  tokenEstimate: number
+  tokenEstimate: number,
+  fileTree?: DirectoryNode
 ): string {
-  // Escape content for initial display
-  const escapedAiContent = aiOptimizedContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -798,6 +884,10 @@ function getPreviewHtml(
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>PromptPacker Preview</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
         <style>
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -805,6 +895,11 @@ function getPreviewHtml(
                 margin: 0;
                 background: var(--vscode-editor-background);
                 color: var(--vscode-editor-foreground);
+            }
+            .main-container {
+                display: flex;
+                gap: 20px;
+                height: calc(100vh - 180px);
             }
             .header { 
                 border-bottom: 2px solid var(--vscode-panel-border); 
@@ -834,17 +929,29 @@ function getPreviewHtml(
                 opacity: 0.8;
                 margin-top: 4px;
             }
+            .content-area {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                min-width: 0;
+            }
             pre { 
-                background: var(--vscode-textCodeBlock-background); 
                 border: 1px solid var(--vscode-input-border);
-                padding: 20px; 
+                margin: 0;
                 border-radius: 6px; 
+                flex: 1;
+                overflow: auto;
+            }
+            pre code.hljs {
+                padding: 20px;
                 white-space: pre-wrap; 
                 word-wrap: break-word; 
                 font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
                 font-size: 13px;
                 line-height: 1.4;
-                overflow-x: auto;
+                display: block;
+                height: 100%;
+                box-sizing: border-box;
             }
             .actions {
                 margin-bottom: 20px;
@@ -875,7 +982,7 @@ function getPreviewHtml(
             .format-toggle .btn {
                 flex-grow: 1;
                 background: transparent;
-                border: none;
+                border: 1px solid transparent;
                 margin: 0;
                 padding: 8px 16px;
                 display: flex;
@@ -889,6 +996,59 @@ function getPreviewHtml(
             }
             .format-toggle .btn:hover {
                 background: var(--vscode-button-hoverBackground);
+            }
+            .file-tree-container {
+                width: 300px;
+                border-right: 1px solid var(--vscode-panel-border);
+                padding-right: 20px;
+                overflow-y: auto;
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: 13px;
+            }
+            .file-tree-container h3 {
+                margin-top: 0;
+                margin-bottom: 15px;
+                color: var(--vscode-textLink-foreground);
+            }
+            .file-tree ul {
+                list-style-type: none;
+                padding-left: 16px;
+                margin: 0;
+            }
+            .file-tree li {
+                position: relative;
+                padding-left: 20px;
+                line-height: 1.6;
+                margin: 2px 0;
+            }
+            .file-tree li::before {
+                content: '';
+                position: absolute;
+                left: 0;
+                top: 0;
+                height: 100%;
+                border-left: 1px solid var(--vscode-input-border);
+            }
+            .file-tree li:last-child::before {
+                height: 0.8em;
+            }
+            .file-tree li::after {
+                content: '';
+                position: absolute;
+                left: 0;
+                top: 0.8em;
+                width: 15px;
+                border-top: 1px solid var(--vscode-input-border);
+            }
+            .file-tree .icon {
+                margin-right: 5px;
+            }
+            .file-tree .file-name {
+                color: var(--vscode-editor-foreground);
+            }
+            .file-tree .directory-name {
+                color: var(--vscode-textLink-foreground);
+                font-weight: 500;
             }
         </style>
     </head>
@@ -922,46 +1082,52 @@ function getPreviewHtml(
                 </div>
             </div>
         </div>
-        <pre><code id="content" class="language-xml">${escapedAiContent}</code></pre>
+        
+        <div class="main-container">
+            <div class="file-tree-container" id="file-tree-root">
+                <h3>📁 Included Files</h3>
+                <div class="file-tree"></div>
+            </div>
+            
+            <div class="content-area">
+                <pre><code id="content" class="language-xml"></code></pre>
+            </div>
+        </div>
         
         <script>
             const vscode = acquireVsCodeApi();
 
-            const contentData = {
-                'ai-optimized': \`${aiOptimizedContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`,
-                'markdown': \`${markdownContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`
-            };
+            // Use JSON stringify/parse for robust data transfer
+            const webviewContentData = ${JSON.stringify({
+              'ai-optimized': aiOptimizedContent,
+              markdown: markdownContent,
+            })};
+            
+            const fileTreeData = ${JSON.stringify(fileTree || null)};
 
             const contentEl = document.getElementById('content');
             const btnAi = document.getElementById('btn-ai');
             const btnMd = document.getElementById('btn-md');
-
-            function escapeHtml(unsafe) {
-                return unsafe
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;")
-                    .replace(/"/g, "&quot;")
-                    .replace(/'/g, "&#039;");
-            }
+            const treeRootEl = document.querySelector('.file-tree');
 
             function setContent(format) {
-                contentEl.innerHTML = escapeHtml(contentData[format]);
+                contentEl.textContent = webviewContentData[format];
                 contentEl.className = format === 'markdown' ? 'language-markdown' : 'language-xml';
+                hljs.highlightElement(contentEl);
                 btnAi.classList.toggle('active', format === 'ai-optimized');
                 btnMd.classList.toggle('active', format === 'markdown');
             }
 
             function copyContent() {
                 const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
-                navigator.clipboard.writeText(contentData[currentFormat]).then(() => {
+                navigator.clipboard.writeText(webviewContentData[currentFormat]).then(() => {
                     vscode.postMessage({ command: 'showInfo', text: 'Copied to clipboard!' });
                 });
             }
             
             function downloadContent() {
                 const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
-                const content = contentData[currentFormat];
+                const content = webviewContentData[currentFormat];
                 const blob = new Blob([content], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -969,6 +1135,34 @@ function getPreviewHtml(
                 a.download = \`promptpacker-output.\${currentFormat === 'markdown' ? 'md' : 'txt'}\`;
                 a.click();
                 URL.revokeObjectURL(url);
+            }
+
+            function buildTree(node, parentElement) {
+                if (!node.children || node.children.length === 0) return;
+                
+                const ul = document.createElement('ul');
+                for (const child of node.children) {
+                    const li = document.createElement('li');
+                    const icon = child.type === 'directory' ? '📁' : '📄';
+                    const nameClass = child.type === 'directory' ? 'directory-name' : 'file-name';
+                    li.innerHTML = \`<span class="icon">\${icon}</span><span class="\${nameClass}">\${child.name}</span>\`;
+                    
+                    if (child.children && child.children.length > 0) {
+                        buildTree(child, li);
+                    }
+                    ul.appendChild(li);
+                }
+                parentElement.appendChild(ul);
+            }
+
+            // Initial load
+            setContent('ai-optimized');
+            
+            // Build file tree if data is available
+            if (fileTreeData && fileTreeData.children && fileTreeData.children.length > 0) {
+                buildTree(fileTreeData, treeRootEl);
+            } else {
+                treeRootEl.innerHTML = '<p style="opacity: 0.7; font-style: italic;">No files to display</p>';
             }
         </script>
     </body>
