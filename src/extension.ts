@@ -120,7 +120,7 @@ function packCodeFiles(filePaths: string[], includeFileContext: boolean = false)
       const message = `🚀 PromptPacker: ${fileCount} file${fileCount > 1 ? 's' : ''} packed${contextText} and copied to clipboard!\n\nReady for AI prompting:\n${codePreview}...`;
       vscode.window.showInformationMessage(message);
     })
-    .then(undefined, (error) => {
+    .then(undefined, (error: any) => {
       vscode.window.showErrorMessage('PromptPacker failed to pack code to clipboard: ' + error);
     });
 }
