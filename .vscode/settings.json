@@ -46,8 +46,16 @@
   "terminal.integrated.defaultProfile.osx": "zsh",
   
   // Extension specific
-  "promptpacker.outputFormat": "ai-optimized",
-  "promptpacker.maxFileSize": "100kb",
-  "promptpacker.maxTotalSize": "1mb",
+// In .vscode/settings.json or a .promptpackerrc file
+
+  "promptpacker.includePatterns": [
+    "**/.prettierignore",
+    "**/.gitignore",
+    "**/*.rc"
+  ],
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
   "hide-files.files": []
+  
 }

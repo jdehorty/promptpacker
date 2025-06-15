@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { minimatch } from 'minimatch';
+import minimatch from 'minimatch';
 
 // ==========================================
 // Types & Interfaces
@@ -9,6 +9,7 @@ import { minimatch } from 'minimatch';
 
 interface PromptPackerConfig {
   ignore: string[];
+  highPriorityPatterns: string[];
   includeExtensions: string[];
   includePatterns: string[];
   maxFileSize: string;
@@ -21,6 +22,15 @@ interface ProcessedFiles {
   allFilePaths: string[];
   totalSize: number;
   totalFiles: number;
+  debugInfo?: FileFilterDebugInfo;
+}
+
+interface FileFilterDebugInfo {
+  totalFilesScanned: number;
+  includedFiles: Array<{path: string; reason: string}>;
+  excludedFiles: Array<{path: string; reason: string}>;
+  sizeExceededFiles: Array<{path: string; size: number; maxSize: number}>;
+  errors: Array<{path: string; error: string}>;
 }
 
 // ==========================================
@@ -35,8 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   // Core functionality commands
-  register('promptpacker.combineFiles', (...args) => runPackCode(args, false));
-  register('promptpacker.combineWithPaths', (...args) => runPackCode(args, true));
+  register('promptpacker.combineFiles', (...args) => runPackCode(args, true));
   register('promptpacker.previewOutput', (...args) => runPreview(args));
   register('promptpacker.openSettings', handleConfigure);
 
@@ -67,7 +76,8 @@ async function runPackCode(args: any[], includeContext: boolean) {
 
     const processed = await processUris(args, workspaceRoot);
     if (processed.allFilePaths.length === 0) {
-      vscode.window.showErrorMessage('No valid files found to pack.');
+      // Show detailed debug information
+      showDetailedFilteringReport(processed.debugInfo, workspaceRoot);
       return;
     }
 
@@ -104,18 +114,29 @@ async function runPreview(args: any[]) {
 
     const processed = await processUris(args, workspaceRoot);
     if (processed.allFilePaths.length === 0) {
-      vscode.window.showErrorMessage('No valid files found to preview.');
+      // Show detailed debug information
+      showDetailedFilteringReport(processed.debugInfo, workspaceRoot);
       return;
     }
 
     const config = getConfig();
-    const combinedCode = await generateCombinedCode(
+
+    // Generate both formats for the preview
+    const aiOptimizedCode = await generateCombinedCode(
       processed.allFilePaths,
       workspaceRoot,
-      config,
+      { ...config, outputFormat: 'ai-optimized' },
       true
     );
-    const tokenEstimate = Math.ceil(combinedCode.length / 4);
+
+    const markdownCode = await generateCombinedCode(
+      processed.allFilePaths,
+      workspaceRoot,
+      { ...config, outputFormat: 'markdown' },
+      true
+    );
+
+    const tokenEstimate = Math.ceil(aiOptimizedCode.length / 4);
 
     const panel = vscode.window.createWebviewPanel(
       'promptPackerPreview',
@@ -124,8 +145,22 @@ async function runPreview(args: any[]) {
       { enableScripts: true }
     );
 
+    // Handle messages from the webview
+    panel.webview.onDidReceiveMessage(
+      message => {
+        switch (message.command) {
+          case 'showInfo':
+            vscode.window.showInformationMessage(message.text);
+            return;
+        }
+      },
+      undefined,
+      undefined
+    );
+
     panel.webview.html = getPreviewHtml(
-      combinedCode,
+      aiOptimizedCode,
+      markdownCode,
       processed.totalFiles,
       processed.totalSize,
       tokenEstimate
@@ -162,7 +197,9 @@ async function handleDiagnose() {
     `  - Max Total Size: ${config.maxTotalSize}`,
     `  - Preserve Structure: ${config.preserveStructure}`,
     `  - Ignore Patterns: ${config.ignore.length} patterns`,
-    `  - Include Patterns: ${config.include.length} patterns`,
+    `  - High Priority Patterns: ${config.highPriorityPatterns.length} patterns`,
+    `  - Include Extensions: ${config.includeExtensions.length} extensions`,
+    `  - Include Patterns: ${config.includePatterns.length} patterns`,
     `✅ Extension is working correctly`,
   ].join('\n');
 
@@ -210,19 +247,36 @@ async function processUris(args: any[], workspaceRoot: string): Promise<Processe
   const allFilePaths: string[] = [];
   let totalSize = 0;
 
+  // Initialize debug info
+  const debugInfo: FileFilterDebugInfo = {
+    totalFilesScanned: 0,
+    includedFiles: [],
+    excludedFiles: [],
+    sizeExceededFiles: [],
+    errors: []
+  };
+
   for (const uri of uris) {
     try {
       const stats = await fs.promises.stat(uri.fsPath);
       if (stats.isDirectory()) {
-        const files = await traverseFolder(uri.fsPath, workspaceRoot, config);
-        allFilePaths.push(...files);
+        const folderResult = await traverseFolderWithDebug(uri.fsPath, workspaceRoot, config, debugInfo);
+        allFilePaths.push(...folderResult.files);
       } else {
+        debugInfo.totalFilesScanned++;
         const relativePath = path.relative(workspaceRoot, uri.fsPath).replace(/\\/g, '/');
-        if (shouldIncludeFile(relativePath, config, stats.size)) {
+        const decision = shouldIncludeFile(relativePath, config, stats.size);
+        
+        if (decision.include) {
           allFilePaths.push(uri.fsPath);
+          debugInfo.includedFiles.push({ path: relativePath, reason: decision.reason });
+        } else {
+          debugInfo.excludedFiles.push({ path: relativePath, reason: decision.reason });
         }
       }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      debugInfo.errors.push({ path: uri.fsPath, error: errorMsg });
       console.error(`Error processing ${uri.fsPath}:`, error);
     }
   }
@@ -239,8 +293,17 @@ async function processUris(args: any[], workspaceRoot: string): Promise<Processe
         filteredPaths.push(filePath);
         currentSize += stats.size;
         totalSize += stats.size;
+      } else {
+        const relativePath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
+        debugInfo.sizeExceededFiles.push({
+          path: relativePath,
+          size: stats.size,
+          maxSize: maxTotalBytes - currentSize
+        });
       }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      debugInfo.errors.push({ path: filePath, error: errorMsg });
       console.error(`Error checking file size for ${filePath}:`, error);
     }
   }
@@ -249,6 +312,7 @@ async function processUris(args: any[], workspaceRoot: string): Promise<Processe
     allFilePaths: filteredPaths,
     totalSize,
     totalFiles: filteredPaths.length,
+    debugInfo
   };
 }
 
@@ -319,7 +383,55 @@ async function generateCombinedCode(
 function getConfig(): PromptPackerConfig {
   const config = vscode.workspace.getConfiguration('promptpacker');
   return {
-    ignore: config.get('ignore') || [],
+    ignore: config.get('ignore') || [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/build/**',
+      '**/out/**',
+      '**/.git/**',
+      '**/*.log',
+      '**/*.lock',
+      '**/coverage/**',
+      '**/.env*',
+    ],
+    highPriorityPatterns: config.get('highPriorityPatterns') || [
+      'package.json',
+      '**/package.json',
+      'tsconfig.json',
+      '**/tsconfig.json',
+      'vite.config.ts',
+      'vite.config.js',
+      'vitest.config.ts',
+      'vitest.config.js',
+      'webpack.config.js',
+      'webpack.config.ts',
+      'rollup.config.js',
+      'rollup.config.ts',
+      '**/*config.js',
+      '**/*config.ts',
+      'README.md',
+      '**/README.md',
+      '.gitignore',
+      '.prettierrc*',
+      '.eslintrc*',
+      'eslint.config.js',
+      'eslint.config.ts',
+      'requirements.txt',
+      '**/requirements.txt',
+      'setup.py',
+      'setup.cfg',
+      'pyproject.toml',
+      'Pipfile',
+      'Cargo.toml',
+      'go.mod',
+      'pom.xml',
+      'build.gradle',
+      '**/Dockerfile',
+      '**/docker-compose.yml',
+      '.dockerignore',
+      'Makefile',
+      '**/Makefile',
+    ],
     includeExtensions: config.get('includeExtensions') || [
       'ts',
       'js',
@@ -354,39 +466,62 @@ function shouldIncludeFile(
   relativePath: string,
   config: PromptPackerConfig,
   fileSize: number
-): boolean {
-  // Check file size limit
+): { include: boolean; reason: string } {
+  // 1. Check file size limit
   const maxFileBytes = parseSize(config.maxFileSize);
   if (fileSize > maxFileBytes) {
-    return false;
+    return { 
+      include: false, 
+      reason: `File size (${(fileSize / 1024).toFixed(1)} KB) exceeds max size (${config.maxFileSize})`
+    };
   }
 
-  // Check ignore patterns first
+  // 2. Check ignore patterns first - this is a hard "no"
   for (const pattern of config.ignore) {
     if (minimatch(relativePath, pattern, { dot: true })) {
-      return false;
+      return { 
+        include: false, 
+        reason: `Ignored by pattern: "${pattern}"`
+      };
     }
   }
 
-  // Check if file matches include patterns (if any are specified)
+  // 3. Check for high-priority files - these are almost always relevant
+  for (const pattern of config.highPriorityPatterns) {
+    if (minimatch(relativePath, pattern, { dot: true })) {
+      return { 
+        include: true, 
+        reason: `High-priority match: "${pattern}"`
+      };
+    }
+  }
+
+  // 4. Check if file matches user-defined include patterns
   if (config.includePatterns.length > 0) {
-    const matchesPattern = config.includePatterns.some(pattern =>
-      minimatch(relativePath, pattern, { dot: true })
-    );
-    if (matchesPattern) {
-      return true;
+    for (const pattern of config.includePatterns) {
+      if (minimatch(relativePath, pattern, { dot: true })) {
+        return { 
+          include: true, 
+          reason: `Matched include pattern: "${pattern}"`
+        };
+      }
     }
   }
 
-  // Check file extension
+  // 5. Check file extension as a fallback
   const fileExtension = getFileExtension(relativePath);
   if (fileExtension && config.includeExtensions.includes(fileExtension)) {
-    return true;
+    return { 
+      include: true, 
+      reason: `Extension ".${fileExtension}" is in include list`
+    };
   }
 
-  // If we have specific include patterns but file doesn't match any, exclude it
-  // If we only have extensions (default case), and it doesn't match, exclude it
-  return false;
+  // 6. If none of the inclusion criteria are met, exclude the file
+  return { 
+    include: false, 
+    reason: `No matching criteria (extension: .${fileExtension || 'none'}, include patterns: ${config.includePatterns.length}, extensions: ${config.includeExtensions.length})`
+  };
 }
 
 function getFileExtension(filePath: string): string {
@@ -394,11 +529,12 @@ function getFileExtension(filePath: string): string {
   return ext || '';
 }
 
-async function traverseFolder(
+async function traverseFolderWithDebug(
   folderPath: string,
   root: string,
-  config: PromptPackerConfig
-): Promise<string[]> {
+  config: PromptPackerConfig,
+  debugInfo: FileFilterDebugInfo
+): Promise<{ files: string[] }> {
   const results: string[] = [];
 
   try {
@@ -410,28 +546,71 @@ async function traverseFolder(
 
       if (entry.isDirectory()) {
         // Check if directory should be ignored
-        const shouldIgnoreDir = config.ignore.some(
-          pattern =>
-            minimatch(relativePath, pattern, { dot: true }) ||
-            minimatch(relativePath + '/', pattern, { dot: true })
-        );
+        let shouldIgnoreDir = false;
+        let ignoreReason = '';
+        
+        for (const pattern of config.ignore) {
+          if (minimatch(relativePath, pattern, { dot: true }) || 
+              minimatch(relativePath + '/', pattern, { dot: true })) {
+            shouldIgnoreDir = true;
+            ignoreReason = pattern;
+            break;
+          }
+        }
 
-        if (!shouldIgnoreDir) {
-          const subResults = await traverseFolder(fullPath, root, config);
-          results.push(...subResults);
+        if (shouldIgnoreDir) {
+          // Count all files in ignored directory for debug info
+          const ignoredCount = await countFilesInDirectory(fullPath);
+          debugInfo.excludedFiles.push({ 
+            path: relativePath + '/', 
+            reason: `Directory ignored by pattern: "${ignoreReason}" (${ignoredCount} files skipped)`
+          });
+        } else {
+          const subResult = await traverseFolderWithDebug(fullPath, root, config, debugInfo);
+          results.push(...subResult.files);
         }
       } else if (entry.isFile()) {
-        const stats = await fs.promises.stat(fullPath);
-        if (shouldIncludeFile(relativePath, config, stats.size)) {
-          results.push(fullPath);
+        debugInfo.totalFilesScanned++;
+        try {
+          const stats = await fs.promises.stat(fullPath);
+          const decision = shouldIncludeFile(relativePath, config, stats.size);
+          
+          if (decision.include) {
+            results.push(fullPath);
+            debugInfo.includedFiles.push({ path: relativePath, reason: decision.reason });
+          } else {
+            debugInfo.excludedFiles.push({ path: relativePath, reason: decision.reason });
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          debugInfo.errors.push({ path: relativePath, error: errorMsg });
         }
       }
     }
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    debugInfo.errors.push({ path: folderPath, error: `Failed to read directory: ${errorMsg}` });
     console.error(`Error traversing folder ${folderPath}:`, error);
   }
 
-  return results;
+  return { files: results };
+}
+
+async function countFilesInDirectory(dirPath: string): Promise<number> {
+  let count = 0;
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        count++;
+      } else if (entry.isDirectory()) {
+        count += await countFilesInDirectory(path.join(dirPath, entry.name));
+      }
+    }
+  } catch {
+    // Ignore errors when counting
+  }
+  return count;
 }
 
 function extractUniqueUris(args: any[]): vscode.Uri[] {
@@ -502,13 +681,115 @@ function getFileExtensionForMarkdown(filePath: string): string {
   return extensionMap[ext] || ext || 'text';
 }
 
+function showDetailedFilteringReport(debugInfo: FileFilterDebugInfo | undefined, workspaceRoot: string) {
+  if (!debugInfo) {
+    vscode.window.showErrorMessage('No files found to pack. Debug information unavailable.');
+    return;
+  }
+
+  const output = vscode.window.createOutputChannel('PromptPacker File Filter Report');
+  output.clear();
+  output.show();
+
+  output.appendLine('🔍 PromptPacker File Filtering Report');
+  output.appendLine('=====================================');
+  output.appendLine('');
+  output.appendLine(`📁 Workspace: ${workspaceRoot}`);
+  output.appendLine(`📊 Total files scanned: ${debugInfo.totalFilesScanned}`);
+  output.appendLine(`✅ Files included: ${debugInfo.includedFiles.length}`);
+  output.appendLine(`❌ Files excluded: ${debugInfo.excludedFiles.length}`);
+  output.appendLine(`📏 Files too large: ${debugInfo.sizeExceededFiles.length}`);
+  output.appendLine(`⚠️  Errors encountered: ${debugInfo.errors.length}`);
+  output.appendLine('');
+
+  // Show excluded files with reasons
+  if (debugInfo.excludedFiles.length > 0) {
+    output.appendLine('❌ EXCLUDED FILES:');
+    output.appendLine('------------------');
+    
+    // Group by reason for better readability
+    const excludedByReason = new Map<string, string[]>();
+    debugInfo.excludedFiles.forEach(file => {
+      const files = excludedByReason.get(file.reason) || [];
+      files.push(file.path);
+      excludedByReason.set(file.reason, files);
+    });
+
+    excludedByReason.forEach((files, reason) => {
+      output.appendLine(`\n📌 ${reason}`);
+      files.slice(0, 10).forEach(file => {
+        output.appendLine(`   - ${file}`);
+      });
+      if (files.length > 10) {
+        output.appendLine(`   ... and ${files.length - 10} more`);
+      }
+    });
+  }
+
+  // Show included files
+  if (debugInfo.includedFiles.length > 0) {
+    output.appendLine('\n✅ INCLUDED FILES:');
+    output.appendLine('------------------');
+    debugInfo.includedFiles.forEach(file => {
+      output.appendLine(`   ✓ ${file.path} (${file.reason})`);
+    });
+  }
+
+  // Show size exceeded files
+  if (debugInfo.sizeExceededFiles.length > 0) {
+    output.appendLine('\n📏 FILES EXCEEDING SIZE LIMIT:');
+    output.appendLine('------------------------------');
+    debugInfo.sizeExceededFiles.forEach(file => {
+      output.appendLine(`   - ${file.path} (${(file.size / 1024).toFixed(1)} KB)`);
+    });
+  }
+
+  // Show errors
+  if (debugInfo.errors.length > 0) {
+    output.appendLine('\n⚠️  ERRORS:');
+    output.appendLine('-----------');
+    debugInfo.errors.forEach(error => {
+      output.appendLine(`   ! ${error.path}: ${error.error}`);
+    });
+  }
+
+  // Show helpful configuration info
+  output.appendLine('\n💡 CONFIGURATION TIP:');
+  output.appendLine('--------------------');
+  output.appendLine('To include more files, you can:');
+  output.appendLine('1. Open VS Code Settings (Cmd/Ctrl + ,)');
+  output.appendLine('2. Search for "PromptPacker"');
+  output.appendLine('3. Modify:');
+  output.appendLine('   - "Include Extensions" to add more file types');
+  output.appendLine('   - "Include Patterns" to add custom glob patterns');
+  output.appendLine('   - "Ignore" patterns to exclude fewer files');
+  output.appendLine('   - "Max File Size" to allow larger files');
+  output.appendLine('');
+  output.appendLine('Or use the command: "⚙️ Open PromptPacker Settings"');
+
+  // Show error dialog with summary
+  const selection = vscode.window.showErrorMessage(
+    `No files to pack! Scanned ${debugInfo.totalFilesScanned} files: ${debugInfo.excludedFiles.length} excluded, ${debugInfo.errors.length} errors. See Output panel for details.`,
+    'View Details',
+    'Open Settings'
+  );
+
+  selection.then(choice => {
+    if (choice === 'Open Settings') {
+      vscode.commands.executeCommand('workbench.action.openSettings', '@ext:ai-edge.promptpacker');
+    }
+  });
+}
+
 function getPreviewHtml(
-  content: string,
+  aiOptimizedContent: string,
+  markdownContent: string,
   fileCount: number,
   totalSize: number,
   tokenEstimate: number
 ): string {
-  const escapedContent = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Escape content for initial display
+  const escapedAiContent = aiOptimizedContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   return `
     <!DOCTYPE html>
@@ -582,11 +863,50 @@ function getPreviewHtml(
             .btn:hover {
                 background: var(--vscode-button-hoverBackground);
             }
+            .format-toggle {
+                display: flex;
+                gap: 5px;
+                margin-bottom: 15px;
+                background: var(--vscode-input-background);
+                padding: 4px;
+                border-radius: 6px;
+                border: 1px solid var(--vscode-input-border);
+            }
+            .format-toggle .btn {
+                flex-grow: 1;
+                background: transparent;
+                border: none;
+                margin: 0;
+                padding: 8px 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+            }
+            .format-toggle .btn.active {
+                background: var(--vscode-button-background);
+                color: var(--vscode-button-foreground);
+            }
+            .format-toggle .btn:hover {
+                background: var(--vscode-button-hoverBackground);
+            }
         </style>
     </head>
     <body>
         <div class="header">
             <h1>📦 PromptPacker Preview</h1>
+            <div class="actions">
+                <button class="btn" onclick="copyContent()">📋 Copy Current View to Clipboard</button>
+                <button class="btn" onclick="downloadContent()">💾 Download Current View</button>
+            </div>
+            <div class="format-toggle">
+                <button id="btn-ai" class="btn active" onclick="setContent('ai-optimized')">
+                    🤖 AI-Optimized (XML)
+                </button>
+                <button id="btn-md" class="btn" onclick="setContent('markdown')">
+                    📝 Markdown
+                </button>
+            </div>
             <div class="stats">
                 <div class="stat-card">
                     <div class="stat-value">${fileCount}</div>
@@ -602,24 +922,51 @@ function getPreviewHtml(
                 </div>
             </div>
         </div>
-        <div class="actions">
-            <button class="btn" onclick="copyContent()">📋 Copy to Clipboard</button>
-            <button class="btn" onclick="downloadContent()">💾 Download</button>
-        </div>
-        <pre><code id="content">${escapedContent}</code></pre>
+        <pre><code id="content" class="language-xml">${escapedAiContent}</code></pre>
         
         <script>
+            const vscode = acquireVsCodeApi();
+
+            const contentData = {
+                'ai-optimized': \`${aiOptimizedContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`,
+                'markdown': \`${markdownContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`
+            };
+
+            const contentEl = document.getElementById('content');
+            const btnAi = document.getElementById('btn-ai');
+            const btnMd = document.getElementById('btn-md');
+
+            function escapeHtml(unsafe) {
+                return unsafe
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            }
+
+            function setContent(format) {
+                contentEl.innerHTML = escapeHtml(contentData[format]);
+                contentEl.className = format === 'markdown' ? 'language-markdown' : 'language-xml';
+                btnAi.classList.toggle('active', format === 'ai-optimized');
+                btnMd.classList.toggle('active', format === 'markdown');
+            }
+
             function copyContent() {
-                navigator.clipboard.writeText(document.getElementById('content').textContent);
+                const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
+                navigator.clipboard.writeText(contentData[currentFormat]).then(() => {
+                    vscode.postMessage({ command: 'showInfo', text: 'Copied to clipboard!' });
+                });
             }
             
             function downloadContent() {
-                const content = document.getElementById('content').textContent;
+                const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
+                const content = contentData[currentFormat];
                 const blob = new Blob([content], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'promptpacker-output.txt';
+                a.download = \`promptpacker-output.\${currentFormat === 'markdown' ? 'md' : 'txt'}\`;
                 a.click();
                 URL.revokeObjectURL(url);
             }
