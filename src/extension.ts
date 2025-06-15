@@ -17,14 +17,16 @@ export function activate(context: vscode.ExtensionContext) {
     'promptpacker.packCode',
     (...args: any[]) => {
       const uris = extractUniqueUris(args);
-      
+
       if (uris.length === 0) {
-        vscode.window.showErrorMessage('Please select one or more files or folders to pack for AI prompts.');
+        vscode.window.showErrorMessage(
+          'Please select one or more files or folders to pack for AI prompts.'
+        );
         return;
       }
 
       const filePaths: string[] = [];
-      
+
       uris.forEach(uri => {
         if (uri instanceof vscode.Uri) {
           const isDirectory = fs.statSync(uri.fsPath).isDirectory();
@@ -165,21 +167,22 @@ function getWorkspaceRoot(): string | undefined {
 function packCodeFiles(filePaths: string[]) {
   let combinedCode = '';
 
-  filePaths.forEach((filePath) => {
+  filePaths.forEach(filePath => {
     const relativePath = getRelativePath(filePath);
     const fileContent = fs.readFileSync(filePath, 'utf8');
     const codeSnippet = `// ${relativePath}\n${fileContent.trim()}`;
     combinedCode += `${codeSnippet}\n\n`;
   });
 
-  vscode.env.clipboard.writeText(combinedCode)
+  vscode.env.clipboard
+    .writeText(combinedCode)
     .then(() => {
       const fileCount = filePaths.length;
       const tokenEstimate = Math.ceil(combinedCode.length / 4); // Simple token estimate
       const message = `🚀 PromptPacker: ${fileCount} file${fileCount > 1 ? 's' : ''} packed (~${tokenEstimate.toLocaleString()} tokens) and copied to clipboard!`;
       vscode.window.showInformationMessage(message);
     })
-    .then(undefined, (error) => {
+    .then(undefined, error => {
       vscode.window.showErrorMessage('Failed to copy the packed code to the clipboard: ' + error);
     });
 }
@@ -247,7 +250,7 @@ async function expandUris(uris: vscode.Uri[]): Promise<string[]> {
 }
 
 function traverseFolder(folderPath: string): string[] {
-  let result: string[] = [];
+  const result: string[] = [];
   const files = fs.readdirSync(folderPath);
 
   files.forEach((file: any) => {
@@ -264,8 +267,6 @@ function traverseFolder(folderPath: string): string[] {
 
   return result;
 }
-
-
 
 function getPreviewHtml(
   result: {
