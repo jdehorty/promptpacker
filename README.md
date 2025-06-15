@@ -157,15 +157,15 @@ Generate technical documentation by providing AI models with organized, contextu
 - **80%+ Noise Reduction**: Smart filtering eliminates irrelevant files
 - **Relevance-Based Prioritization**: Important files surface first
 - **Token-Aware Processing**: Respects LLM context limits
-- **45% Smaller Bundles**: Optimized with Bun for faster processing
+- **Optimized Performance**: Modern build system for faster processing
 - **Project Type Detection**: Automatically identifies frameworks and patterns
 
 ## 🔧 **Development & Contributing**
 
 Built with modern technologies:
-- **Pure Bun Runtime**: 25x faster package management and building
-- **TypeScript**: Full type safety with strict mode
+- **Modern JavaScript**: TypeScript with full type safety and strict mode
 - **Native ES Modules**: Modern JavaScript with optimal bundling
+- **Efficient Build System**: Vite for fast development and production builds
 - **VS Code API**: Following modern best practices
 
 ### Local Development
@@ -173,20 +173,20 @@ Built with modern technologies:
 # Clone and setup
 git clone https://github.com/jdehorty/promptpacker
 cd promptpacker
-bun install
+pnpm install
 
 # Development workflow
-bun run dev          # Start development build
-bun run build        # Production build
-bun run test         # Run tests
-bun run vscode:package # Create VSIX package
+pnpm run dev          # Start development build
+pnpm run build        # Production build
+pnpm run test         # Run tests
+pnpm run vscode:package # Create VSIX package
 ```
 
 ## 🆕 **Latest Features**
 
 - 🧠 **Intelligent Filtering**: Advanced file classification and relevance scoring
 - 🎯 **LLM-Optimized Formats**: AI-optimized XML output for better understanding
-- ⚡ **Performance**: 45% smaller bundles with pure Bun runtime
+- ⚡ **Performance**: Optimized build system with modern tooling
 - 🔧 **Configuration**: Flexible `.promptpackerrc` and VS Code settings integration
 - 👁️ **Preview Panel**: Real-time HTML preview with statistics
 - 📊 **Token Estimation**: Rough token counting for LLM planning

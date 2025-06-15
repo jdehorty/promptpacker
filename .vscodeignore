@@ -5,7 +5,7 @@
 
 # Development dependencies and configuration
 node_modules/**
-bunfig.toml
+# bunfig.toml (removed)
 eslint.config.js
 .prettierrc
 .prettierignore
@@ -33,7 +33,7 @@ Thumbs.db
 
 # Documentation and development files
 IMPLEMENTATION_SUMMARY.md
-BUN_MIGRATION_SUMMARY.md
+# BUN_MIGRATION_SUMMARY.md (removed)
 .promptpackerrc.example
 CONTRIBUTING.md
 DEVELOPMENT.md
@@ -50,8 +50,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Bun specific
-bun.lockb
+# Bun specific (removed)
+# bun.lockb
 
 # Only include what's needed at runtime:
 # - dist/ (compiled output)

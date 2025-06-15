@@ -6,18 +6,20 @@
   "description": "Pack It. Prompt It. Ship It. 🚀\n\nPromptPacker is the ultimate VS Code extension for AI developers and prompt engineers. Instantly combine and organize your code files into perfectly formatted prompts for modern LLMs. Transform scattered code into context-rich prompts with one click.\n\nFeatures:\n• Pack Code to Clipboard: Instantly combine multiple files for AI prompts\n• Smart Context Preservation: Maintains file structure and relationships\n• Multi-file Selection: Right-click multiple files for batch processing\n• AI-Optimized Output: Perfect formatting for LLM consumption",
   "main": "dist/extension.js",
   "scripts": {
-    "test": "bun test",
-    "build": "bun build ./src/extension.ts --outdir ./dist --target node --external vscode --minify --sourcemap",
-    "build:dev": "bun build ./src/extension.ts --outdir ./dist --target node --external vscode --sourcemap",
-    "vscode:prepublish": "bun run build",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest --coverage",
+    "build": "vite build",
+    "build:dev": "vite build --mode development",
+    "vscode:prepublish": "pnpm run build",
     "vscode:package": "vsce package",
-    "watch": "bun build ./src/extension.ts --outdir ./dist --target node --external vscode --watch --sourcemap",
-    "lint": "bunx eslint src --ext .ts",
-    "lint:fix": "bunx eslint src --ext .ts --fix",
-    "format": "bunx prettier --write \"src/**/*.ts\"",
-    "format:check": "bunx prettier --check \"src/**/*.ts\"",
+    "watch": "vite build --watch",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
     "clean": "rm -rf dist && rm -rf node_modules",
-    "dev": "bun run build:dev && bun run watch"
+    "dev": "pnpm run build:dev && pnpm run watch"
   },
 
   "publisher": "ai-edge",
@@ -171,25 +173,24 @@
   },
   "devDependencies": {
     "@types/minimatch": "^5.1.2",
+    "@types/node": "^22.10.2",
     "@types/vscode": "^1.92.0",
     "@typescript-eslint/eslint-plugin": "8.34.0",
     "@typescript-eslint/parser": "8.34.0",
-    "bun-types": "1.2.16",
+    "@vitest/coverage-v8": "^2.1.8",
     "eslint": "9.29.0",
     "eslint-config-prettier": "10.1.5",
     "eslint-plugin-prettier": "5.4.1",
     "prettier": "3.5.3",
+    "typescript": "^5.7.2",
     "typescript-eslint": "8.34.0",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8",
     "vsce": "^2.6.3"
   },
   "icon": "images/logo.png",
   "trustedDependencies": [
     "vsce"
   ],
-  "bun": {
-    "target": "node",
-    "external": ["vscode"],
-    "minify": true,
-    "sourcemap": true
-  }
+  "packageManager": "pnpm@9.15.0"
 }

@@ -12,7 +12,7 @@
       "outFiles": [
         "${workspaceFolder}/dist/**/*.js"
       ],
-      "preLaunchTask": "${workspaceFolder}/bun: build - dev"
+      "preLaunchTask": "${workspaceFolder}/build - dev"
     },
     {
       "name": "Run Extension (Watch Mode)",
@@ -24,7 +24,7 @@
       "outFiles": [
         "${workspaceFolder}/dist/**/*.js"
       ],
-      "preLaunchTask": "${workspaceFolder}/bun: watch",
+      "preLaunchTask": "${workspaceFolder}/watch",
       "presentation": {
         "reveal": "never"
       }
@@ -40,7 +40,7 @@
       "outFiles": [
         "${workspaceFolder}/dist/test/**/*.js"
       ],
-      "preLaunchTask": "${workspaceFolder}/bun: build - dev"
+      "preLaunchTask": "${workspaceFolder}/build - dev"
     }
   ]
 }

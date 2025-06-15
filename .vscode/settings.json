@@ -4,7 +4,7 @@
   "typescript.suggest.autoImports": true,
   "typescript.updateImportsOnFileMove.enabled": "always",
   
-  // Bun-specific settings
+  // TypeScript settings
   "typescript.preferences.importModuleSpecifier": "relative",
   "typescript.format.enable": false, // Use Prettier instead
   
@@ -25,16 +25,14 @@
     "**/Thumbs.db": true,
     "**/__pycache__": true,
     "**/node_modules": true,
-    "**/dist": true,
-    "**/bun.lockb": true
+    "**/dist": true
   },
   
   // Search and file watching
   "search.exclude": {
     "**/node_modules": true,
     "**/dist": true,
-    "**/*.map": true,
-    "**/bun.lockb": true
+    "**/*.map": true
   },
   
   "files.watcherExclude": {
@@ -45,9 +43,6 @@
   
   // Terminal
   "terminal.integrated.defaultProfile.osx": "zsh",
-  "terminal.integrated.env.osx": {
-    "PATH": "${env:PATH}:${env:HOME}/.bun/bin"
-  },
   
   // Extension specific
   "promptpacker.outputFormat": "ai-optimized",

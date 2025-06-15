@@ -23,6 +23,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', '**/*.js', 'bun.lockb'],
+    ignores: ['dist/**', 'node_modules/**', '**/*.js'],
   }
 );
