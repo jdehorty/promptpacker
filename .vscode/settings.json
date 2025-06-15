@@ -24,6 +24,7 @@
     "**/.DS_Store": true,
     "**/Thumbs.db": true,
     "**/__pycache__": true,
+    "...": true,
     "**/node_modules": true,
     "**/dist": true
   },

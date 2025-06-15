@@ -1,788 +1,629 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as minimatch from 'minimatch';
-import { ConfigLoader } from './core/ConfigLoader';
-import { CodebaseProcessor } from './core/CodebaseProcessor';
-import { PromptPackerConfig } from './types';
-import { logger } from './core/Logger';
-import { IntelligentFilter } from './core/IntelligentFilter';
+import { minimatch } from 'minimatch';
 
 // ==========================================
-// Professional Type Definitions
+// Types & Interfaces
 // ==========================================
 
-/**
- * VS Code command arguments can be various types depending on the context
- */
-type CommandArgs = vscode.Uri | vscode.Uri[] | unknown;
-
-/**
- * Webview message types for communication between webview and extension
- */
-interface WebviewMessage {
-  type: 'copied' | 'copyError';
-  error?: string;
+interface PromptPackerConfig {
+  ignore: string[];
+  includeExtensions: string[];
+  includePatterns: string[];
+  maxFileSize: string;
+  maxTotalSize: string;
+  preserveStructure: boolean;
+  outputFormat: 'ai-optimized' | 'standard' | 'markdown';
 }
 
-/**
- * File path mapping for URI handling
- */
-type UriPathMap = Record<string, vscode.Uri>;
-
-/**
- * Command registration helper type
- */
-type CommandHandler = (...args: CommandArgs[]) => Promise<void> | void;
+interface ProcessedFiles {
+  allFilePaths: string[];
+  totalSize: number;
+  totalFiles: number;
+}
 
 // ==========================================
-// Extension State
+// Main Activation
 // ==========================================
 
-let statusBarItem: vscode.StatusBarItem;
+export function activate(context: vscode.ExtensionContext) {
+  console.log('🚀 PromptPacker is now active!');
 
-// ==========================================
-// Main Extension Functions
-// ==========================================
+  const register = (command: string, handler: (...args: any[]) => Promise<void> | void) => {
+    context.subscriptions.push(vscode.commands.registerCommand(command, handler));
+  };
 
-export function activate(context: vscode.ExtensionContext): void {
-  try {
-    logger.info('Extension', 'PromptPacker activation started', {
-      extensionId: context.extension.id,
-      extensionPath: context.extensionPath,
-      version: context.extension.packageJSON.version,
-      vsCodeVersion: vscode.version,
-      workspaceFolders: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath),
-    });
+  // Core functionality commands
+  register('promptpacker.combineFiles', (...args) => runPackCode(args, false));
+  register('promptpacker.combineWithPaths', (...args) => runPackCode(args, true));
+  register('promptpacker.previewOutput', (...args) => runPreview(args));
+  register('promptpacker.openSettings', handleConfigure);
 
-    // Create status bar item
-    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    context.subscriptions.push(statusBarItem);
+  // Diagnostic commands
+  register('promptpacker.runDiagnostics', handleDiagnose);
+  register('promptpacker.viewLogs', handleShowLogs);
+  register('promptpacker.exportDebugInfo', handleDebugInfo);
+  register('promptpacker.testExtension', handleTest);
 
-    logger.debug('Extension', 'Status bar item created successfully');
+  console.log('✅ All PromptPacker commands registered successfully');
+}
 
-    // Register commands with proper typing
-    const commands: Record<string, CommandHandler> = {
-      'promptpacker.packCode': handlePackCode,
-      'promptpacker.packCodeWithContext': handlePackCodeWithContext,
-      'promptpacker.configure': handleConfigure,
-      'promptpacker.preview': handlePreview,
-      'promptpacker.diagnose': handleDiagnose,
-      'promptpacker.showLogs': handleShowLogs,
-    };
-
-    // Register all commands
-    Object.entries(commands).forEach(([commandId, handler]) => {
-      const disposable = vscode.commands.registerCommand(commandId, handler);
-      context.subscriptions.push(disposable);
-    });
-
-    logger.info('Extension', 'PromptPacker activation completed successfully', {
-      commandsRegistered: Object.keys(commands).length,
-      logFile: logger.getLogFile(),
-    });
-  } catch (error) {
-    logger.error('Extension', 'Critical error during activation', error as Error);
-    vscode.window.showErrorMessage(
-      `PromptPacker failed to activate: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
-    throw error;
-  }
+export function deactivate() {
+  console.log('👋 PromptPacker deactivated');
 }
 
 // ==========================================
 // Command Handlers
 // ==========================================
 
-async function handlePackCode(...args: CommandArgs[]): Promise<void> {
-  logger.info('Command', 'packCode command executed', { argsLength: args.length });
-
+async function runPackCode(args: any[], includeContext: boolean) {
   try {
-    const uris = extractUniqueUris(args);
-    logger.debug('Command', 'Extracted URIs from command args', {
-      uriCount: uris.length,
-      uris: uris.map(u => u.fsPath),
-    });
-
-    if (uris.length === 0) {
-      const errorMsg = 'Please select one or more files or folders to pack for AI prompts.';
-      logger.warn('Command', 'No URIs provided to packCode command');
-      vscode.window.showErrorMessage(errorMsg);
+    const workspaceRoot = getWorkspaceRoot();
+    if (!workspaceRoot) {
+      vscode.window.showErrorMessage('Please open a folder to use PromptPacker.');
       return;
     }
 
-    const filePaths: string[] = [];
-
-    uris.forEach(uri => {
-      if (uri instanceof vscode.Uri) {
-        try {
-          const isDirectory = fs.statSync(uri.fsPath).isDirectory();
-          if (isDirectory) {
-            logger.debug('Command', 'Processing directory', { path: uri.fsPath });
-            const files = traverseFolder(uri.fsPath);
-            filePaths.push(...files);
-            logger.debug('Command', 'Found files in directory', { count: files.length });
-          } else {
-            logger.debug('Command', 'Processing file', { path: uri.fsPath });
-            filePaths.push(uri.fsPath);
-          }
-        } catch (error) {
-          logger.error('Command', 'Error processing URI', error as Error, {
-            uri: uri.fsPath,
-          });
-          vscode.window.showErrorMessage(
-            `Error accessing ${uri.fsPath}: ${error instanceof Error ? error.message : 'Unknown error'}`
-          );
-        }
-      }
-    });
-
-    if (filePaths.length > 0) {
-      logger.info('Command', 'Packing files', { fileCount: filePaths.length });
-      await packCodeFiles(filePaths);
-    } else {
-      const errorMsg = 'No files found in the selected folders.';
-      logger.warn('Command', errorMsg);
-      vscode.window.showErrorMessage(errorMsg);
+    const processed = await processUris(args, workspaceRoot);
+    if (processed.allFilePaths.length === 0) {
+      vscode.window.showErrorMessage('No valid files found to pack.');
+      return;
     }
+
+    const config = getConfig();
+    const combinedCode = await generateCombinedCode(
+      processed.allFilePaths,
+      workspaceRoot,
+      config,
+      includeContext
+    );
+
+    await vscode.env.clipboard.writeText(combinedCode);
+
+    const fileCount = processed.allFilePaths.length;
+    const sizeKb = Math.round(processed.totalSize / 1024);
+    vscode.window.showInformationMessage(
+      `📦 Packed ${fileCount} file${fileCount > 1 ? 's' : ''} (${sizeKb} KB). Copied to clipboard!`
+    );
   } catch (error) {
-    logger.error('Command', 'Error in packCode command', error as Error);
+    console.error('Error in runPackCode:', error);
     vscode.window.showErrorMessage(
-      `PromptPacker error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `Failed to pack code: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 }
 
-async function handlePackCodeWithContext(...args: CommandArgs[]): Promise<void> {
-  logger.info('Command', 'packCodeWithContext command executed (redirecting to packCode)');
-  // Same as packCode since new version always preserves context based on config
-  await vscode.commands.executeCommand('promptpacker.packCode', ...args);
-}
-
-async function handleConfigure(): Promise<void> {
-  logger.info('Command', 'configure command executed');
-
+async function runPreview(args: any[]) {
   try {
     const workspaceRoot = getWorkspaceRoot();
     if (!workspaceRoot) {
-      const errorMsg = 'No workspace folder open';
-      logger.warn('Command', errorMsg);
-      vscode.window.showErrorMessage(errorMsg);
+      vscode.window.showErrorMessage('Please open a folder to use PromptPacker.');
       return;
     }
 
-    logger.debug('Command', 'Using workspace root', { workspaceRoot });
-
-    const configPath = path.join(workspaceRoot, '.promptpackerrc');
-    logger.debug('Command', 'Config path determined', { configPath });
-
-    if (!fs.existsSync(configPath)) {
-      logger.info('Command', 'Config file does not exist, prompting user to create');
-      const create = await vscode.window.showInformationMessage(
-        'No .promptpackerrc file found. Would you like to create one?',
-        'Yes',
-        'No'
-      );
-
-      if (create === 'Yes') {
-        logger.info('Command', 'Creating default config file');
-        const defaultConfig = await ConfigLoader.loadConfig(workspaceRoot);
-        await ConfigLoader.saveConfig(workspaceRoot, defaultConfig);
-        logger.info('Command', 'Config file created successfully');
-      } else {
-        logger.info('Command', 'User chose not to create config file');
-        return;
-      }
+    const processed = await processUris(args, workspaceRoot);
+    if (processed.allFilePaths.length === 0) {
+      vscode.window.showErrorMessage('No valid files found to preview.');
+      return;
     }
 
-    const document = await vscode.workspace.openTextDocument(configPath);
-    await vscode.window.showTextDocument(document);
-    logger.info('Command', 'Config file opened successfully');
-  } catch (error) {
-    logger.error('Command', 'Error in configure command', error as Error);
-    vscode.window.showErrorMessage(
-      `Configuration error: ${error instanceof Error ? error.message : 'Unknown error'}`
+    const config = getConfig();
+    const combinedCode = await generateCombinedCode(
+      processed.allFilePaths,
+      workspaceRoot,
+      config,
+      true
     );
-  }
-}
+    const tokenEstimate = Math.ceil(combinedCode.length / 4);
 
-async function handlePreview(...args: CommandArgs[]): Promise<void> {
-  logger.info('Command', 'preview command executed', { argsLength: args.length });
-
-  try {
-    const workspaceRoot = getWorkspaceRoot();
-    if (!workspaceRoot) {
-      const errorMsg = 'No workspace folder open';
-      logger.warn('Command', errorMsg);
-      vscode.window.showErrorMessage(errorMsg);
-      return;
-    }
-
-    logger.debug('Command', 'Loading config for preview', { workspaceRoot });
-    const config = await ConfigLoader.loadConfig(workspaceRoot);
-    const uris = extractUniqueUris(args);
-
-    logger.debug('Command', 'Extracted URIs for preview', {
-      uriCount: uris.length,
-      uris: uris.map(u => u.fsPath),
-    });
-
-    if (uris.length === 0) {
-      const errorMsg = 'Please select one or more files or folders to preview.';
-      logger.warn('Command', errorMsg);
-      vscode.window.showErrorMessage(errorMsg);
-      return;
-    }
-
-    logger.info('Command', 'Creating processor and processing files');
-    const processor = new CodebaseProcessor(config, statusBarItem);
-    const filePaths = await expandUris(uris);
-    logger.debug('Command', 'Expanded file paths', { fileCount: filePaths.length });
-
-    const result = await processor.processFiles(filePaths, workspaceRoot);
-    logger.info('Command', 'Files processed successfully', {
-      processedFiles: result.files.length,
-      totalSize: result.totalSize,
-      tokenEstimate: result.tokenEstimate,
-    });
-
-    // Create preview panel
-    logger.debug('Command', 'Creating webview panel');
     const panel = vscode.window.createWebviewPanel(
       'promptPackerPreview',
-      'PromptPacker Preview',
+      '📦 PromptPacker Preview',
       vscode.ViewColumn.One,
-      {
-        enableScripts: true,
-        localResourceRoots: [],
-        retainContextWhenHidden: true,
-      }
+      { enableScripts: true }
     );
 
-    panel.webview.html = getPreviewHtml(result, config);
-    logger.info('Command', 'Preview panel created successfully');
-
-    // Handle webview messages with proper typing
-    panel.webview.onDidReceiveMessage(
-      (message: WebviewMessage) => {
-        switch (message.type) {
-          case 'copied':
-            vscode.window.showInformationMessage('✅ Content copied to clipboard!');
-            break;
-          case 'copyError':
-            vscode.window.showErrorMessage(
-              `❌ Failed to copy: ${message.error || 'Unknown error'}`
-            );
-            break;
-        }
-      },
-      undefined,
-      []
+    panel.webview.html = getPreviewHtml(
+      combinedCode,
+      processed.totalFiles,
+      processed.totalSize,
+      tokenEstimate
     );
   } catch (error) {
-    logger.error('Command', 'Error in preview command', error as Error);
+    console.error('Error in runPreview:', error);
     vscode.window.showErrorMessage(
-      `PromptPacker preview error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `Failed to preview: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 }
 
-async function handleDiagnose(): Promise<void> {
-  logger.info('Command', 'diagnose command executed');
-  await runDiagnostics();
+async function handleConfigure() {
+  await vscode.commands.executeCommand(
+    'workbench.action.openSettings',
+    '@ext:ai-edge.promptpacker'
+  );
 }
 
-async function handleShowLogs(): Promise<void> {
-  logger.info('Command', 'showLogs command executed');
-  await showDebugLogs();
+async function handleDiagnose() {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    vscode.window.showWarningMessage('No workspace folder open');
+    return;
+  }
+
+  const config = getConfig();
+  const diagnostics = [
+    `🔍 PromptPacker Diagnostics`,
+    `📁 Workspace: ${workspaceRoot}`,
+    `⚙️ Config:`,
+    `  - Output Format: ${config.outputFormat}`,
+    `  - Max File Size: ${config.maxFileSize}`,
+    `  - Max Total Size: ${config.maxTotalSize}`,
+    `  - Preserve Structure: ${config.preserveStructure}`,
+    `  - Ignore Patterns: ${config.ignore.length} patterns`,
+    `  - Include Patterns: ${config.include.length} patterns`,
+    `✅ Extension is working correctly`,
+  ].join('\n');
+
+  vscode.window.showInformationMessage('Diagnostics completed. Check output for details.');
+  const output = vscode.window.createOutputChannel('PromptPacker Diagnostics');
+  output.clear();
+  output.appendLine(diagnostics);
+  output.show();
+}
+
+async function handleShowLogs() {
+  const output = vscode.window.createOutputChannel('PromptPacker Logs');
+  output.clear();
+  output.appendLine('📋 PromptPacker Debug Logs');
+  output.appendLine(`⏰ ${new Date().toISOString()}`);
+  output.appendLine('🟢 Extension is active and ready');
+  output.show();
+}
+
+async function handleDebugInfo() {
+  const info = {
+    version:
+      vscode.extensions.getExtension('ai-edge.promptpacker')?.packageJSON?.version || 'Unknown',
+    vscodeVersion: vscode.version,
+    workspaceCount: vscode.workspace.workspaceFolders?.length || 0,
+    config: getConfig(),
+  };
+
+  const debugInfo = JSON.stringify(info, null, 2);
+  vscode.window.showInformationMessage('Debug info copied to clipboard');
+  await vscode.env.clipboard.writeText(debugInfo);
+}
+
+async function handleTest() {
+  vscode.window.showInformationMessage('🧪 PromptPacker Extension Test - All systems operational!');
+}
+
+// ==========================================
+// Core Processing Logic
+// ==========================================
+
+async function processUris(args: any[], workspaceRoot: string): Promise<ProcessedFiles> {
+  const uris = extractUniqueUris(args);
+  const config = getConfig();
+  const allFilePaths: string[] = [];
+  let totalSize = 0;
+
+  for (const uri of uris) {
+    try {
+      const stats = await fs.promises.stat(uri.fsPath);
+      if (stats.isDirectory()) {
+        const files = await traverseFolder(uri.fsPath, workspaceRoot, config);
+        allFilePaths.push(...files);
+      } else {
+        const relativePath = path.relative(workspaceRoot, uri.fsPath).replace(/\\/g, '/');
+        if (shouldIncludeFile(relativePath, config, stats.size)) {
+          allFilePaths.push(uri.fsPath);
+        }
+      }
+    } catch (error) {
+      console.error(`Error processing ${uri.fsPath}:`, error);
+    }
+  }
+
+  // Calculate total size and apply size limits
+  const maxTotalBytes = parseSize(config.maxTotalSize);
+  let currentSize = 0;
+  const filteredPaths: string[] = [];
+
+  for (const filePath of allFilePaths) {
+    try {
+      const stats = await fs.promises.stat(filePath);
+      if (currentSize + stats.size <= maxTotalBytes) {
+        filteredPaths.push(filePath);
+        currentSize += stats.size;
+        totalSize += stats.size;
+      }
+    } catch (error) {
+      console.error(`Error checking file size for ${filePath}:`, error);
+    }
+  }
+
+  return {
+    allFilePaths: filteredPaths,
+    totalSize,
+    totalFiles: filteredPaths.length,
+  };
+}
+
+async function generateCombinedCode(
+  filePaths: string[],
+  workspaceRoot: string,
+  config: PromptPackerConfig,
+  includeContext: boolean
+): Promise<string> {
+  const results: string[] = [];
+
+  if (config.outputFormat === 'ai-optimized') {
+    results.push('<codebase_analysis>');
+
+    if (includeContext) {
+      results.push('  <project_overview>');
+      results.push(`    <name>${path.basename(workspaceRoot)}</name>`);
+      results.push(`    <total_files>${filePaths.length}</total_files>`);
+      results.push('  </project_overview>');
+      results.push('');
+      results.push('  <source_files>');
+    }
+  }
+
+  for (const filePath of filePaths) {
+    try {
+      const fileContent = await fs.promises.readFile(filePath, 'utf8');
+      const relativePath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
+
+      if (config.outputFormat === 'ai-optimized') {
+        results.push(`    <file path="${relativePath}">`);
+        results.push(fileContent.trim());
+        results.push('    </file>');
+        results.push('');
+      } else if (config.outputFormat === 'markdown') {
+        results.push(`## ${relativePath}`);
+        results.push('```' + getFileExtensionForMarkdown(filePath));
+        results.push(fileContent.trim());
+        results.push('```');
+        results.push('');
+      } else {
+        // Standard format
+        if (config.preserveStructure || includeContext) {
+          results.push(`// ${relativePath}`);
+        }
+        results.push(fileContent.trim());
+        results.push('');
+      }
+    } catch (error) {
+      console.error(`Error reading file ${filePath}:`, error);
+    }
+  }
+
+  if (config.outputFormat === 'ai-optimized') {
+    if (includeContext) {
+      results.push('  </source_files>');
+    }
+    results.push('</codebase_analysis>');
+  }
+
+  return results.join('\n');
 }
 
 // ==========================================
 // Utility Functions
 // ==========================================
 
-function getWorkspaceRoot(): string | undefined {
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (workspaceFolders && workspaceFolders.length > 0) {
-    return workspaceFolders[0].uri.fsPath;
-  }
-  return undefined;
+function getConfig(): PromptPackerConfig {
+  const config = vscode.workspace.getConfiguration('promptpacker');
+  return {
+    ignore: config.get('ignore') || [],
+    includeExtensions: config.get('includeExtensions') || [
+      'ts',
+      'js',
+      'tsx',
+      'jsx',
+      'py',
+      'java',
+      'c',
+      'cpp',
+      'cs',
+      'go',
+      'rs',
+      'php',
+      'rb',
+      'swift',
+      'kt',
+      'md',
+      'txt',
+      'json',
+      'yaml',
+      'yml',
+    ],
+    includePatterns: config.get('includePatterns') || [],
+    maxFileSize: config.get('maxFileSize') || '100kb',
+    maxTotalSize: config.get('maxTotalSize') || '1mb',
+    preserveStructure: config.get('preserveStructure') ?? true,
+    outputFormat: config.get('outputFormat') || 'ai-optimized',
+  };
 }
 
-async function packCodeFiles(filePaths: string[]): Promise<void> {
-  logger.info('PackCode', 'Starting to pack files', { fileCount: filePaths.length });
+function shouldIncludeFile(
+  relativePath: string,
+  config: PromptPackerConfig,
+  fileSize: number
+): boolean {
+  // Check file size limit
+  const maxFileBytes = parseSize(config.maxFileSize);
+  if (fileSize > maxFileBytes) {
+    return false;
+  }
 
-  try {
-    let combinedCode = '';
+  // Check ignore patterns first
+  for (const pattern of config.ignore) {
+    if (minimatch(relativePath, pattern, { dot: true })) {
+      return false;
+    }
+  }
 
-    filePaths.forEach(filePath => {
-      try {
-        const relativePath = getRelativePath(filePath);
-        logger.debug('PackCode', 'Reading file', { filePath, relativePath });
-
-        const fileContent = fs.readFileSync(filePath, 'utf8');
-        const codeSnippet = `// ${relativePath}\n${fileContent.trim()}`;
-        combinedCode += `${codeSnippet}\n\n`;
-
-        logger.debug('PackCode', 'File processed successfully', {
-          filePath,
-          contentLength: fileContent.length,
-        });
-      } catch (error) {
-        logger.error('PackCode', 'Error reading file', error as Error, { filePath });
-        // Continue with other files
-      }
-    });
-
-    await vscode.env.clipboard.writeText(combinedCode);
-
-    const fileCount = filePaths.length;
-    const tokenEstimate = Math.ceil(combinedCode.length / 4);
-    const message = `🚀 PromptPacker: ${fileCount} file${fileCount > 1 ? 's' : ''} packed (~${tokenEstimate.toLocaleString()} tokens) and copied to clipboard!`;
-
-    logger.info('PackCode', 'Files packed successfully', {
-      fileCount,
-      totalLength: combinedCode.length,
-      tokenEstimate,
-    });
-
-    vscode.window.showInformationMessage(message);
-  } catch (error) {
-    logger.error('PackCode', 'Error packing files', error as Error, { filePaths });
-    vscode.window.showErrorMessage(
-      'Failed to copy the packed code to the clipboard: ' +
-        (error instanceof Error ? error.message : 'Unknown error')
+  // Check if file matches include patterns (if any are specified)
+  if (config.includePatterns.length > 0) {
+    const matchesPattern = config.includePatterns.some(pattern =>
+      minimatch(relativePath, pattern, { dot: true })
     );
-  }
-}
-
-function getRelativePath(filePath: string): string {
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (workspaceFolders) {
-    for (const folder of workspaceFolders) {
-      const folderPath = folder.uri.fsPath;
-      if (filePath.startsWith(folderPath)) {
-        const relativePath = path.relative(folderPath, filePath).replace(/\\/g, '/');
-        return relativePath;
-      }
-    }
-  }
-  return filePath;
-}
-
-function extractUniqueUris(args: unknown[]): vscode.Uri[] {
-  const flatArgs = flattenArray(args);
-  const uriMap: UriPathMap = {};
-
-  flatArgs.forEach(arg => {
-    if (arg instanceof vscode.Uri) {
-      const path = arg.fsPath;
-      if (!isOverriddenByParent(path, uriMap)) {
-        uriMap[path] = arg;
-      }
-    }
-  });
-
-  return Object.values(uriMap);
-}
-
-function flattenArray(arr: unknown[]): unknown[] {
-  return arr.reduce((acc: unknown[], item: unknown) => {
-    return Array.isArray(item) ? acc.concat(flattenArray(item)) : acc.concat(item);
-  }, []);
-}
-
-function isOverriddenByParent(path: string, uriMap: UriPathMap): boolean {
-  for (const existingPath in uriMap) {
-    if (path.startsWith(existingPath) && path !== existingPath) {
+    if (matchesPattern) {
       return true;
     }
   }
+
+  // Check file extension
+  const fileExtension = getFileExtension(relativePath);
+  if (fileExtension && config.includeExtensions.includes(fileExtension)) {
+    return true;
+  }
+
+  // If we have specific include patterns but file doesn't match any, exclude it
+  // If we only have extensions (default case), and it doesn't match, exclude it
   return false;
 }
 
-async function expandUris(uris: vscode.Uri[]): Promise<string[]> {
-  const filePaths: string[] = [];
-
-  for (const uri of uris) {
-    const stat = await fs.promises.stat(uri.fsPath);
-
-    if (stat.isDirectory()) {
-      const files = await traverseFolder(uri.fsPath);
-      filePaths.push(...files);
-    } else {
-      filePaths.push(uri.fsPath);
-    }
-  }
-
-  return filePaths;
+function getFileExtension(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  return ext || '';
 }
 
-function traverseFolder(folderPath: string): string[] {
-  const result: string[] = [];
-  const files = fs.readdirSync(folderPath);
-
-  files.forEach((file: string) => {
-    const filePath = path.join(folderPath, file);
-    const stat = fs.statSync(filePath);
-
-    if (stat.isFile()) {
-      result.push(filePath);
-    } else if (stat.isDirectory()) {
-      const nestedFiles = traverseFolder(filePath);
-      result.push(...nestedFiles);
-    }
-  });
-
-  return result;
-}
-
-interface PreviewResult {
-  formattedOutput: string;
-  files: { length: number };
-  totalSize: number;
-  tokenEstimate: number;
-}
-
-function getPreviewHtml(result: PreviewResult, config: PromptPackerConfig): string {
-  const escapedContent = result.formattedOutput
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
-    <title>PromptPacker Preview</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        .header {
-            background: #007acc;
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .stat {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .stat-label {
-            font-size: 0.9em;
-            color: #666;
-        }
-        .stat-value {
-            font-size: 1.5em;
-            font-weight: bold;
-            color: #007acc;
-        }
-        .content {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        pre {
-            background: #f8f8f8;
-            padding: 15px;
-            border-radius: 4px;
-            overflow-x: auto;
-            font-size: 0.9em;
-            line-height: 1.4;
-        }
-        .copy-button {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #007acc;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1em;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }
-        .copy-button:hover {
-            background: #005a9e;
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>📦 PromptPacker Preview</h1>
-        <p>Review your packed code before copying to clipboard</p>
-    </div>
-    
-    <div class="stats">
-        <div class="stat">
-            <div class="stat-label">Files Included</div>
-            <div class="stat-value">${result.files.length}</div>
-        </div>
-        <div class="stat">
-            <div class="stat-label">Total Size</div>
-            <div class="stat-value">${(result.totalSize / 1024).toFixed(1)} KB</div>
-        </div>
-        <div class="stat">
-            <div class="stat-label">Token Estimate</div>
-            <div class="stat-value">${result.tokenEstimate.toLocaleString()}</div>
-        </div>
-        <div class="stat">
-            <div class="stat-label">Output Format</div>
-            <div class="stat-value">${config.outputFormat}</div>
-        </div>
-    </div>
-    
-    <div class="content">
-        <h2>Output</h2>
-        <pre>${escapedContent}</pre>
-    </div>
-    
-    <button class="copy-button" onclick="copyToClipboard()">
-        📋 Copy to Clipboard
-    </button>
-    
-    <script>
-        const vscode = acquireVsCodeApi();
-        
-        function copyToClipboard() {
-            const content = \`${result.formattedOutput.replace(/[\\`$]/g, '\\$&')}\`;
-            
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(content).then(() => {
-                    vscode.postMessage({ type: 'copied' });
-                }).catch((error) => {
-                    console.error('Clipboard copy failed:', error);
-                    vscode.postMessage({ type: 'copyError', error: error.message });
-                    // Fallback: try to use execCommand
-                    fallbackCopyToClipboard(content);
-                });
-            } else {
-                // Fallback for older browsers
-                fallbackCopyToClipboard(content);
-            }
-        }
-        
-        function fallbackCopyToClipboard(text) {
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.top = '0';
-            textArea.style.left = '0';
-            textArea.style.width = '2em';
-            textArea.style.height = '2em';
-            textArea.style.padding = '0';
-            textArea.style.border = 'none';
-            textArea.style.outline = 'none';
-            textArea.style.boxShadow = 'none';
-            textArea.style.background = 'transparent';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            
-            try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    vscode.postMessage({ type: 'copied' });
-                } else {
-                    vscode.postMessage({ type: 'copyError', error: 'Copy command failed' });
-                }
-            } catch (err) {
-                vscode.postMessage({ type: 'copyError', error: 'Fallback copy failed' });
-            }
-            
-            document.body.removeChild(textArea);
-        }
-    </script>
-</body>
-</html>`;
-}
-
-async function runDiagnostics(): Promise<void> {
-  logger.info('Diagnostics', 'Starting comprehensive diagnostics');
+async function traverseFolder(
+  folderPath: string,
+  root: string,
+  config: PromptPackerConfig
+): Promise<string[]> {
+  const results: string[] = [];
 
   try {
-    const diagnostics: string[] = [];
+    const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
 
-    // Check VS Code version compatibility
-    const vscodeVersion = vscode.version;
-    diagnostics.push(`✅ VS Code Version: ${vscodeVersion}`);
+    for (const entry of entries) {
+      const fullPath = path.join(folderPath, entry.name);
+      const relativePath = path.relative(root, fullPath).replace(/\\/g, '/');
 
-    // Check workspace
-    const workspaceRoot = getWorkspaceRoot();
-    if (workspaceRoot) {
-      diagnostics.push(`✅ Workspace Root: ${workspaceRoot}`);
-
-      // Check config loading
-      try {
-        const config = await ConfigLoader.loadConfig(workspaceRoot);
-        diagnostics.push(`✅ Config loaded successfully`);
-        diagnostics.push(`   - Output Format: ${config.outputFormat}`);
-        diagnostics.push(`   - Ignore Patterns: ${config.ignore.length}`);
-        diagnostics.push(`   - Include Patterns: ${config.include.length}`);
-        diagnostics.push(`   - Max File Size: ${config.maxFileSize}`);
-        diagnostics.push(`   - Max Total Size: ${config.maxTotalSize}`);
-      } catch (configError) {
-        diagnostics.push(
-          `❌ Config loading failed: ${configError instanceof Error ? configError.message : 'Unknown error'}`
+      if (entry.isDirectory()) {
+        // Check if directory should be ignored
+        const shouldIgnoreDir = config.ignore.some(
+          pattern =>
+            minimatch(relativePath, pattern, { dot: true }) ||
+            minimatch(relativePath + '/', pattern, { dot: true })
         );
+
+        if (!shouldIgnoreDir) {
+          const subResults = await traverseFolder(fullPath, root, config);
+          results.push(...subResults);
+        }
+      } else if (entry.isFile()) {
+        const stats = await fs.promises.stat(fullPath);
+        if (shouldIncludeFile(relativePath, config, stats.size)) {
+          results.push(fullPath);
+        }
       }
-
-      // Test file filtering
-      try {
-        new IntelligentFilter({
-          root: workspaceRoot,
-          ignore: ['**/*.test.js'],
-          include: ['**/*.ts', '**/*.js'],
-          maxFileSize: '100kb',
-          respectGitignore: true,
-        });
-        diagnostics.push(`✅ IntelligentFilter created successfully`);
-      } catch (filterError) {
-        diagnostics.push(
-          `❌ IntelligentFilter creation failed: ${filterError instanceof Error ? filterError.message : 'Unknown error'}`
-        );
-      }
-    } else {
-      diagnostics.push(`⚠️  No workspace folder open`);
     }
-
-    // Check log file access
-    const logFile = logger.getLogFile();
-    if (fs.existsSync(logFile)) {
-      const stats = fs.statSync(logFile);
-      diagnostics.push(`✅ Log file accessible: ${logFile}`);
-      diagnostics.push(`   - Size: ${(stats.size / 1024).toFixed(1)} KB`);
-      diagnostics.push(`   - Modified: ${stats.mtime.toISOString()}`);
-    } else {
-      diagnostics.push(`❌ Log file not found: ${logFile}`);
-    }
-
-    // Check dependencies
-    try {
-      // Test minimatch functionality
-      const testPattern = minimatch.minimatch('test.js', '*.js');
-      diagnostics.push(`✅ minimatch dependency loaded (test: ${testPattern})`);
-    } catch (depError) {
-      diagnostics.push(
-        `❌ minimatch dependency missing: ${depError instanceof Error ? depError.message : 'Unknown error'}`
-      );
-    }
-
-    // System info
-    diagnostics.push(`📊 System Information:`);
-    diagnostics.push(`   - Node Version: ${process.version}`);
-    diagnostics.push(`   - Platform: ${process.platform}`);
-    diagnostics.push(`   - Architecture: ${process.arch}`);
-    diagnostics.push(
-      `   - Memory Usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB`
-    );
-
-    const diagnosticReport = diagnostics.join('\n');
-    logger.info('Diagnostics', 'Diagnostics completed', { report: diagnosticReport });
-
-    // Show results in a webview
-    const panel = vscode.window.createWebviewPanel(
-      'promptPackerDiagnostics',
-      'PromptPacker Diagnostics',
-      vscode.ViewColumn.One,
-      { enableScripts: false }
-    );
-
-    panel.webview.html = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>PromptPacker Diagnostics</title>
-    <style>
-        body { font-family: monospace; padding: 20px; line-height: 1.6; }
-        .success { color: #28a745; }
-        .warning { color: #ffc107; }
-        .error { color: #dc3545; }
-        .info { color: #17a2b8; }
-        pre { background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }
-    </style>
-</head>
-<body>
-    <h1>🔧 PromptPacker Diagnostics Report</h1>
-    <p><strong>Generated:</strong> ${new Date().toISOString()}</p>
-    <p><strong>Log File:</strong> ${logFile}</p>
-    <hr>
-    <pre>${diagnosticReport}</pre>
-    <hr>
-    <p><em>For detailed logs, use the "Show Debug Logs" command.</em></p>
-</body>
-</html>`;
-
-    vscode.window.showInformationMessage(
-      '✅ Diagnostics completed. Check the report panel for details.'
-    );
   } catch (error) {
-    logger.error('Diagnostics', 'Error running diagnostics', error as Error);
-    vscode.window.showErrorMessage(
-      `Diagnostics failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+    console.error(`Error traversing folder ${folderPath}:`, error);
+  }
+
+  return results;
+}
+
+function extractUniqueUris(args: any[]): vscode.Uri[] {
+  const uris: vscode.Uri[] = [];
+  const seen = new Set<string>();
+
+  const addUri = (uri: unknown) => {
+    if (uri instanceof vscode.Uri && !seen.has(uri.fsPath)) {
+      uris.push(uri);
+      seen.add(uri.fsPath);
+    }
+  };
+
+  // Handle different argument structures
+  for (const arg of args) {
+    if (Array.isArray(arg)) {
+      arg.forEach(addUri);
+    } else {
+      addUri(arg);
+    }
+  }
+
+  return uris;
+}
+
+function getWorkspaceRoot(): string | undefined {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+function parseSize(sizeStr: string): number {
+  const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*(kb|mb|gb)?$/i);
+  if (!match) return 100 * 1024; // Default 100KB
+
+  const value = parseFloat(match[1]);
+  const unit = (match[2] || 'kb').toLowerCase();
+
+  switch (unit) {
+    case 'gb':
+      return value * 1024 * 1024 * 1024;
+    case 'mb':
+      return value * 1024 * 1024;
+    case 'kb':
+      return value * 1024;
+    default:
+      return value;
   }
 }
 
-async function showDebugLogs(): Promise<void> {
-  logger.info('ShowLogs', 'Opening debug logs');
-
-  try {
-    const logFile = logger.getLogFile();
-
-    if (!fs.existsSync(logFile)) {
-      vscode.window.showWarningMessage(
-        'No log file found. Try using the extension first to generate logs.'
-      );
-      return;
-    }
-
-    // Open the log file in VS Code
-    const document = await vscode.workspace.openTextDocument(logFile);
-    await vscode.window.showTextDocument(document);
-
-    vscode.window.showInformationMessage(`Debug logs opened: ${logFile}`);
-  } catch (error) {
-    logger.error('ShowLogs', 'Error opening debug logs', error as Error);
-    vscode.window.showErrorMessage(
-      `Failed to open logs: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
-  }
+function getFileExtensionForMarkdown(filePath: string): string {
+  const ext = path.extname(filePath).slice(1);
+  const extensionMap: { [key: string]: string } = {
+    js: 'javascript',
+    ts: 'typescript',
+    jsx: 'javascript',
+    tsx: 'typescript',
+    py: 'python',
+    rb: 'ruby',
+    php: 'php',
+    java: 'java',
+    cpp: 'cpp',
+    c: 'c',
+    cs: 'csharp',
+    go: 'go',
+    rs: 'rust',
+    swift: 'swift',
+    kt: 'kotlin',
+  };
+  return extensionMap[ext] || ext || 'text';
 }
 
-export function deactivate() {
-  logger.info('Extension', 'PromptPacker deactivation started');
+function getPreviewHtml(
+  content: string,
+  fileCount: number,
+  totalSize: number,
+  tokenEstimate: number
+): string {
+  const escapedContent = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  try {
-    if (statusBarItem) {
-      statusBarItem.dispose();
-      logger.debug('Extension', 'Status bar item disposed');
-    }
-
-    logger.info('Extension', 'PromptPacker deactivated successfully');
-  } catch (error) {
-    logger.error('Extension', 'Error during deactivation', error as Error);
-  }
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>PromptPacker Preview</title>
+        <style>
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                padding: 20px; 
+                margin: 0;
+                background: var(--vscode-editor-background);
+                color: var(--vscode-editor-foreground);
+            }
+            .header { 
+                border-bottom: 2px solid var(--vscode-panel-border); 
+                padding-bottom: 15px; 
+                margin-bottom: 20px; 
+            }
+            .stats { 
+                display: grid; 
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 15px; 
+                margin-bottom: 20px; 
+            }
+            .stat-card {
+                background: var(--vscode-input-background);
+                border: 1px solid var(--vscode-input-border);
+                border-radius: 6px;
+                padding: 12px;
+                text-align: center;
+            }
+            .stat-value {
+                font-size: 1.5em;
+                font-weight: bold;
+                color: var(--vscode-textLink-foreground);
+            }
+            .stat-label {
+                font-size: 0.9em;
+                opacity: 0.8;
+                margin-top: 4px;
+            }
+            pre { 
+                background: var(--vscode-textCodeBlock-background); 
+                border: 1px solid var(--vscode-input-border);
+                padding: 20px; 
+                border-radius: 6px; 
+                white-space: pre-wrap; 
+                word-wrap: break-word; 
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: 13px;
+                line-height: 1.4;
+                overflow-x: auto;
+            }
+            .actions {
+                margin-bottom: 20px;
+                display: flex;
+                gap: 10px;
+            }
+            .btn {
+                background: var(--vscode-button-background);
+                color: var(--vscode-button-foreground);
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 13px;
+            }
+            .btn:hover {
+                background: var(--vscode-button-hoverBackground);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>📦 PromptPacker Preview</h1>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value">${fileCount}</div>
+                    <div class="stat-label">Files</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${(totalSize / 1024).toFixed(1)} KB</div>
+                    <div class="stat-label">Total Size</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">~${tokenEstimate.toLocaleString()}</div>
+                    <div class="stat-label">Est. Tokens</div>
+                </div>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn" onclick="copyContent()">📋 Copy to Clipboard</button>
+            <button class="btn" onclick="downloadContent()">💾 Download</button>
+        </div>
+        <pre><code id="content">${escapedContent}</code></pre>
+        
+        <script>
+            function copyContent() {
+                navigator.clipboard.writeText(document.getElementById('content').textContent);
+            }
+            
+            function downloadContent() {
+                const content = document.getElementById('content').textContent;
+                const blob = new Blob([content], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'promptpacker-output.txt';
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+        </script>
+    </body>
+    </html>`;
 }

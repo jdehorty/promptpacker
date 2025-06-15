@@ -1,8 +1,7 @@
 {
   "name": "promptpacker",
   "displayName": "PromptPacker",
-  "version": "1.0.10",
-  "type": "module",
+  "version": "1.0.16",
   "description": "Pack It. Prompt It. Ship It. 🚀\n\nPromptPacker is the ultimate VS Code extension for AI developers and prompt engineers. Instantly combine and organize your code files into perfectly formatted prompts for modern LLMs. Transform scattered code into context-rich prompts with one click.\n\nFeatures:\n• Pack Code to Clipboard: Instantly combine multiple files for AI prompts\n• Smart Context Preservation: Maintains file structure and relationships\n• Multi-file Selection: Right-click multiple files for batch processing\n• AI-Optimized Output: Perfect formatting for LLM consumption",
   "main": "dist/extension.js",
   "scripts": {
@@ -48,9 +47,9 @@
     "prompt-crafting",
     "code-packing"
   ],
-  "engines": {
-    "vscode": "^1.92.0"
-  },
+      "engines": {
+      "vscode": "^1.92.0"
+    },
   "categories": [
     "Machine Learning",
     "Other",
@@ -58,72 +57,84 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onCommand:promptpacker.packCode",
-    "onCommand:promptpacker.packCodeWithContext",
-    "onCommand:promptpacker.configure",
-    "onCommand:promptpacker.preview",
-    "onCommand:promptpacker.diagnose",
-    "onCommand:promptpacker.showLogs"
+    "onCommand:promptpacker.combineFiles",
+    "onCommand:promptpacker.combineWithPaths",
+    "onCommand:promptpacker.openSettings",
+    "onCommand:promptpacker.previewOutput",
+    "onCommand:promptpacker.runDiagnostics",
+    "onCommand:promptpacker.viewLogs",
+    "onCommand:promptpacker.exportDebugInfo",
+    "onCommand:promptpacker.testExtension"
   ],
   "contributes": {
     "commands": [
       {
-        "command": "promptpacker.packCode",
-        "title": "📦 Pack Code for AI Analysis",
+        "command": "promptpacker.combineFiles",
+        "title": "📦 Combine Files to Clipboard",
         "category": "PromptPacker"
       },
       {
-        "command": "promptpacker.packCodeWithContext",
-        "title": "🎯 Pack Code with File Context",
+        "command": "promptpacker.combineWithPaths",
+        "title": "🎯 Combine Files with File Paths",
         "category": "PromptPacker"
       },
       {
-        "command": "promptpacker.configure",
-        "title": "⚙️ Configure PromptPacker",
+        "command": "promptpacker.openSettings",
+        "title": "⚙️ Open PromptPacker Settings",
         "category": "PromptPacker"
       },
       {
-        "command": "promptpacker.preview",
-        "title": "👁️ Preview Packed Output",
+        "command": "promptpacker.previewOutput",
+        "title": "👁️ Preview Combined Output",
         "category": "PromptPacker"
       },
       {
-        "command": "promptpacker.diagnose",
-        "title": "🔧 Run Diagnostics",
+        "command": "promptpacker.runDiagnostics",
+        "title": "🔧 Run Extension Diagnostics",
         "category": "PromptPacker"
       },
       {
-        "command": "promptpacker.showLogs",
-        "title": "📋 Show Debug Logs",
+        "command": "promptpacker.viewLogs",
+        "title": "📋 View Extension Logs",
+        "category": "PromptPacker"
+      },
+      {
+        "command": "promptpacker.exportDebugInfo",
+        "title": "🐛 Export Debug Information",
+        "category": "PromptPacker"
+      },
+      {
+        "command": "promptpacker.testExtension",
+        "title": "🧪 Test Extension Functions",
         "category": "PromptPacker"
       }
     ],
     "menus": {
       "explorer/context": [
         {
-          "command": "promptpacker.packCode",
+          "command": "promptpacker.combineFiles",
           "group": "promptpacker@1"
         },
         {
-          "command": "promptpacker.preview",
+          "command": "promptpacker.previewOutput",
           "group": "promptpacker@2"
         },
         {
-          "command": "promptpacker.packCodeWithContext",
+          "command": "promptpacker.combineWithPaths",
           "group": "promptpacker@3"
         }
       ],
       "explorer/context:multi": [
         {
-          "command": "promptpacker.packCode",
+          "command": "promptpacker.combineFiles",
           "group": "promptpacker@1"
         },
         {
-          "command": "promptpacker.preview",
+          "command": "promptpacker.previewOutput",
           "group": "promptpacker@2"
         },
         {
-          "command": "promptpacker.packCodeWithContext",
+          "command": "promptpacker.combineWithPaths",
           "group": "promptpacker@3"
         }
       ]
@@ -137,25 +148,54 @@
             "type": "string"
           },
           "default": [
-            "**/*.test.{js,ts,jsx,tsx}",
-            "**/*.spec.{js,ts,jsx,tsx}",
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/out/**",
+            "**/.git/**",
+            "**/*.lock",
             "**/coverage/**",
-            "**/.env*"
+            "**/.env*",
+            "**/*.test.{js,ts,jsx,tsx}",
+            "**/*.spec.{js,ts,jsx,tsx}"
           ],
           "description": "Glob patterns for files to ignore"
         },
-        "promptpacker.include": {
+        "promptpacker.includeExtensions": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "default": [
-            "src/**/*.{js,ts,jsx,tsx}",
-            "**/*.md",
-            "package.json",
-            "*.config.{js,ts,json}"
+            "ts",
+            "js",
+            "tsx",
+            "jsx",
+            "py",
+            "java",
+            "c",
+            "cpp",
+            "cs",
+            "go",
+            "rs",
+            "php",
+            "rb",
+            "swift",
+            "kt",
+            "md",
+            "txt",
+            "json",
+            "yaml",
+            "yml"
           ],
-          "description": "Glob patterns for files to include"
+          "description": "File extensions to include (without dots)"
+        },
+        "promptpacker.includePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional glob patterns for files to include"
         },
         "promptpacker.maxFileSize": {
           "type": "string",
