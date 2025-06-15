@@ -19,7 +19,7 @@ export class OutputFormatter {
     }
   }
 
-  private formatAiOptimized(result: ProcessingResult): string {
+  public formatAiOptimized(result: ProcessingResult): string {
     const output: string[] = [];
 
     output.push('<codebase_analysis>');
@@ -110,7 +110,7 @@ export class OutputFormatter {
     return output.join('\n');
   }
 
-  private formatMarkdown(result: ProcessingResult): string {
+  public formatMarkdown(result: ProcessingResult): string {
     const output: string[] = [];
 
     output.push(`# ${result.overview.name}`);
@@ -150,7 +150,7 @@ export class OutputFormatter {
     return output.join('\n');
   }
 
-  private formatStandard(result: ProcessingResult): string {
+  public formatStandard(result: ProcessingResult): string {
     const output: string[] = [];
 
     const sortedFiles = result.files

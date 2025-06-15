@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { IntelligentFilter } from '../../src/core/IntelligentFilter';
 import { FilterConfig } from '../../src/types';
 import * as fs from 'fs';
-import * as path from 'path';
 
 // Mock fs module
 vi.mock('fs', () => ({
@@ -46,11 +45,11 @@ describe('IntelligentFilter', () => {
     };
 
     // Mock .gitignore existence and content
-    vi.mocked(fs.existsSync).mockImplementation((filePath) => {
+    vi.mocked(fs.existsSync).mockImplementation((filePath: any) => {
       return filePath === '/test-project/.gitignore';
     });
 
-    vi.mocked(fs.readFileSync).mockImplementation((filePath) => {
+    vi.mocked(fs.readFileSync).mockImplementation((filePath: any) => {
       if (filePath === '/test-project/.gitignore') {
         return 'node_modules/\\ndist/\\n.env';
       }

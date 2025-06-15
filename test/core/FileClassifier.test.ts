@@ -110,8 +110,8 @@ This is a test project for demonstrating PromptPacker functionality.
 ## Usage
 
 \`\`\`bash
-npm install
-npm run build
+pnpm install
+pnpm run build
 \`\`\``;
 
       vi.mocked(fs.promises.readFile).mockResolvedValue(mockContent);

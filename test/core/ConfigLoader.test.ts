@@ -32,7 +32,7 @@ vi.mock('vscode', () => ({
   window: {
     showWarningMessage: vi.fn(),
   },
-}), { virtual: true });
+}));
 
 describe('ConfigLoader', () => {
   beforeEach(() => {

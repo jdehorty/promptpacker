@@ -5,7 +5,7 @@ import { PromptPackerConfig } from '../types';
 
 export class ConfigLoader {
   private static readonly CONFIG_FILE_NAME = '.promptpackerrc';
-  private static readonly DEFAULT_CONFIG: PromptPackerConfig = {
+  public static readonly DEFAULT_CONFIG: PromptPackerConfig = {
     ignore: [
       '**/*.test.{js,ts,jsx,tsx}',
       '**/*.spec.{js,ts,jsx,tsx}',

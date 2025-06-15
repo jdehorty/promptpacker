@@ -136,7 +136,7 @@ export class FileClassifier {
     return metadata;
   }
 
-  private analyzeContent(
+  public analyzeContent(
     content: string,
     extension: string
   ): { densityMultiplier: number; relevanceMultiplier: number } {

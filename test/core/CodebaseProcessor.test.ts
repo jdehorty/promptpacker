@@ -196,11 +196,11 @@ describe('CodebaseProcessor', () => {
       const contextMap = buildContextMap(mockFiles, '/test');
       
       expect(contextMap.configFiles).toHaveLength(4);
-      expect(contextMap.configFiles.map(f => f.relativePath)).toContain('package.json');
-      expect(contextMap.configFiles.map(f => f.relativePath)).toContain('tsconfig.json');
-      expect(contextMap.configFiles.map(f => f.relativePath)).toContain('src/config.ts');
-      expect(contextMap.configFiles.map(f => f.relativePath)).toContain('vite.config.ts');
-      expect(contextMap.configFiles.map(f => f.relativePath)).not.toContain('src/app.ts');
+      expect(contextMap.configFiles.map((f: any) => f.relativePath)).toContain('package.json');
+      expect(contextMap.configFiles.map((f: any) => f.relativePath)).toContain('tsconfig.json');
+      expect(contextMap.configFiles.map((f: any) => f.relativePath)).toContain('src/config.ts');
+      expect(contextMap.configFiles.map((f: any) => f.relativePath)).toContain('vite.config.ts');
+      expect(contextMap.configFiles.map((f: any) => f.relativePath)).not.toContain('src/app.ts');
     });
 
     it('should limit core files to top 10 by relevance', () => {
@@ -255,13 +255,13 @@ describe('CodebaseProcessor', () => {
       expect(tree).toHaveLength(2); // src directory and README.md file
       
       // Find src directory
-      const srcDir = tree.find(node => node.name === 'src');
+      const srcDir = tree.find((node: any) => node.name === 'src');
       expect(srcDir).toBeDefined();
       expect(srcDir?.type).toBe('directory');
       expect(srcDir?.children).toBeDefined();
       
       // Find README file
-      const readmeFile = tree.find(node => node.name === 'README.md');
+      const readmeFile = tree.find((node: any) => node.name === 'README.md');
       expect(readmeFile).toBeDefined();
       expect(readmeFile?.type).toBe('file');
     });
