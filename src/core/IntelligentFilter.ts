@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { minimatch } from 'minimatch';
 import { FilterConfig, FileMetadata } from '../types';
+import { logger } from './Logger';
 
 export class IntelligentFilter {
   private static readonly DEFAULT_EXCLUSIONS = [
@@ -202,30 +203,55 @@ export class IntelligentFilter {
   private gitignorePatterns: string[] = [];
 
   constructor(config: FilterConfig) {
+    logger.debug('IntelligentFilter', 'Initializing filter', {
+      root: config.root,
+      ignoreCount: config.ignore.length,
+      includeCount: config.include.length,
+      respectGitignore: config.respectGitignore,
+      maxFileSize: config.maxFileSize,
+    });
+
     this.config = config;
     if (config.respectGitignore !== false) {
       this.loadGitignorePatterns();
     }
+
+    logger.debug('IntelligentFilter', 'Filter initialized successfully');
   }
 
   private loadGitignorePatterns(): void {
     const gitignorePath = path.join(this.config.root, '.gitignore');
+    logger.debug('IntelligentFilter', 'Loading gitignore patterns', { gitignorePath });
+
     if (fs.existsSync(gitignorePath)) {
-      const content = fs.readFileSync(gitignorePath, 'utf-8');
-      this.gitignorePatterns = content
-        .split('\n')
-        .map((line: string) => line.trim())
-        .filter((line: string) => line && !line.startsWith('#'))
-        .map((pattern: string) => {
-          // Convert gitignore patterns to glob patterns
-          if (pattern.endsWith('/')) {
-            return `**/${pattern}**`;
-          }
-          if (pattern.startsWith('/')) {
-            return pattern.substring(1);
-          }
-          return `**/${pattern}`;
+      try {
+        const content = fs.readFileSync(gitignorePath, 'utf-8');
+        this.gitignorePatterns = content
+          .split('\n')
+          .map((line: string) => line.trim())
+          .filter((line: string) => line && !line.startsWith('#'))
+          .map((pattern: string) => {
+            // Convert gitignore patterns to glob patterns
+            if (pattern.endsWith('/')) {
+              return `**/${pattern}**`;
+            }
+            if (pattern.startsWith('/')) {
+              return pattern.substring(1);
+            }
+            return `**/${pattern}`;
+          });
+
+        logger.info('IntelligentFilter', 'Gitignore patterns loaded', {
+          gitignorePath,
+          patternCount: this.gitignorePatterns.length,
         });
+      } catch (error) {
+        logger.error('IntelligentFilter', 'Error reading gitignore file', error as Error, {
+          gitignorePath,
+        });
+      }
+    } else {
+      logger.debug('IntelligentFilter', 'No gitignore file found', { gitignorePath });
     }
   }
 
@@ -373,30 +399,61 @@ export class IntelligentFilter {
     dirPath: string,
     currentDepth: number = 0
   ): Promise<FileMetadata[]> {
+    logger.debug('IntelligentFilter', 'Analyzing directory', {
+      dirPath,
+      currentDepth,
+      maxDepth: this.config.maxDepth,
+    });
+
     const files: FileMetadata[] = [];
 
     if (this.config.maxDepth !== undefined && currentDepth >= this.config.maxDepth) {
+      logger.debug('IntelligentFilter', 'Max depth reached, skipping directory', {
+        dirPath,
+        currentDepth,
+        maxDepth: this.config.maxDepth,
+      });
       return files;
     }
 
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    try {
+      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+      logger.debug('IntelligentFilter', 'Directory entries found', {
+        dirPath,
+        entryCount: entries.length,
+      });
 
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
 
-      if (entry.isDirectory()) {
-        const shouldCheck = this.shouldIncludeDirectory(fullPath);
-        if (shouldCheck.include) {
-          const subFiles = await this.analyzeDirectory(fullPath, currentDepth + 1);
-          files.push(...subFiles);
+        if (entry.isDirectory()) {
+          const shouldCheck = this.shouldIncludeDirectory(fullPath);
+          if (shouldCheck.include) {
+            const subFiles = await this.analyzeDirectory(fullPath, currentDepth + 1);
+            files.push(...subFiles);
+          } else {
+            logger.debug('IntelligentFilter', 'Directory excluded', {
+              dirPath: fullPath,
+              reason: shouldCheck.reason,
+            });
+          }
+        } else if (entry.isFile()) {
+          const metadata = await this.analyzeFile(fullPath);
+          files.push(metadata);
         }
-      } else if (entry.isFile()) {
-        const metadata = await this.analyzeFile(fullPath);
-        files.push(metadata);
       }
-    }
 
-    return files;
+      logger.info('IntelligentFilter', 'Directory analysis completed', {
+        dirPath,
+        filesFound: files.length,
+        includedFiles: files.filter(f => f.isIncluded).length,
+      });
+
+      return files;
+    } catch (error) {
+      logger.error('IntelligentFilter', 'Error analyzing directory', error as Error, { dirPath });
+      return files;
+    }
   }
 
   private shouldIncludeDirectory(dirPath: string): { include: boolean; reason?: string } {

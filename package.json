@@ -1,7 +1,7 @@
 {
   "name": "promptpacker",
   "displayName": "PromptPacker",
-  "version": "1.0.8",
+  "version": "1.0.10",
   "type": "module",
   "description": "Pack It. Prompt It. Ship It. 🚀\n\nPromptPacker is the ultimate VS Code extension for AI developers and prompt engineers. Instantly combine and organize your code files into perfectly formatted prompts for modern LLMs. Transform scattered code into context-rich prompts with one click.\n\nFeatures:\n• Pack Code to Clipboard: Instantly combine multiple files for AI prompts\n• Smart Context Preservation: Maintains file structure and relationships\n• Multi-file Selection: Right-click multiple files for batch processing\n• AI-Optimized Output: Perfect formatting for LLM consumption",
   "main": "dist/extension.js",
@@ -57,7 +57,14 @@
     "Snippets",
     "Programming Languages"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:promptpacker.packCode",
+    "onCommand:promptpacker.packCodeWithContext",
+    "onCommand:promptpacker.configure",
+    "onCommand:promptpacker.preview",
+    "onCommand:promptpacker.diagnose",
+    "onCommand:promptpacker.showLogs"
+  ],
   "contributes": {
     "commands": [
       {
@@ -78,6 +85,16 @@
       {
         "command": "promptpacker.preview",
         "title": "👁️ Preview Packed Output",
+        "category": "PromptPacker"
+      },
+      {
+        "command": "promptpacker.diagnose",
+        "title": "🔧 Run Diagnostics",
+        "category": "PromptPacker"
+      },
+      {
+        "command": "promptpacker.showLogs",
+        "title": "📋 Show Debug Logs",
         "category": "PromptPacker"
       }
     ],

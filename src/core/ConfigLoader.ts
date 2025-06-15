@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { PromptPackerConfig } from '../types';
+import { logger } from './Logger';
 
 export class ConfigLoader {
   private static readonly CONFIG_FILE_NAME = '.promptpackerrc';
@@ -20,23 +21,35 @@ export class ConfigLoader {
   };
 
   public static async loadConfig(workspaceRoot: string): Promise<PromptPackerConfig> {
+    logger.debug('ConfigLoader', 'Loading configuration', { workspaceRoot });
+
     // First, try to load from .promptpackerrc file
     const configPath = path.join(workspaceRoot, ConfigLoader.CONFIG_FILE_NAME);
     let fileConfig: Partial<PromptPackerConfig> = {};
 
     if (fs.existsSync(configPath)) {
       try {
+        logger.debug('ConfigLoader', 'Found config file, parsing', { configPath });
         const content = await fs.promises.readFile(configPath, 'utf-8');
         fileConfig = JSON.parse(content);
+        logger.info('ConfigLoader', 'Config file loaded successfully', {
+          configPath,
+          hasIgnore: !!fileConfig.ignore,
+          hasInclude: !!fileConfig.include,
+        });
       } catch (error) {
+        logger.error('ConfigLoader', 'Failed to parse config file', error as Error, { configPath });
         vscode.window.showWarningMessage(
           `Failed to parse ${ConfigLoader.CONFIG_FILE_NAME}: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
       }
+    } else {
+      logger.debug('ConfigLoader', 'No config file found, using defaults', { configPath });
     }
 
     // Then, load VS Code settings
     const vscodeConfig = vscode.workspace.getConfiguration('promptpacker');
+    logger.debug('ConfigLoader', 'Loading VS Code configuration settings');
 
     // Merge configurations: VS Code settings override file config, which overrides defaults
     const config: PromptPackerConfig = {
@@ -67,6 +80,14 @@ export class ConfigLoader {
         fileConfig.outputFormat ||
         ConfigLoader.DEFAULT_CONFIG.outputFormat,
     };
+
+    logger.info('ConfigLoader', 'Configuration loaded successfully', {
+      outputFormat: config.outputFormat,
+      ignoreCount: config.ignore.length,
+      includeCount: config.include.length,
+      maxFileSize: config.maxFileSize,
+      maxTotalSize: config.maxTotalSize,
+    });
 
     return config;
   }

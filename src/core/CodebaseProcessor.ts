@@ -11,6 +11,7 @@ import {
 import { IntelligentFilter } from './IntelligentFilter';
 import { FileClassifier } from './FileClassifier';
 import { OutputFormatter } from './OutputFormatter';
+import { logger } from './Logger';
 
 export class CodebaseProcessor {
   private config: PromptPackerConfig;
@@ -20,6 +21,12 @@ export class CodebaseProcessor {
   private statusBarItem: vscode.StatusBarItem;
 
   constructor(config: PromptPackerConfig, statusBarItem: vscode.StatusBarItem) {
+    logger.debug('CodebaseProcessor', 'Initializing CodebaseProcessor', {
+      configFormat: config.outputFormat,
+      ignorePatterns: config.ignore.length,
+      includePatterns: config.include.length,
+    });
+
     this.config = config;
     this.classifier = new FileClassifier();
     this.formatter = new OutputFormatter(config);
@@ -31,9 +38,17 @@ export class CodebaseProcessor {
       maxFileSize: config.maxFileSize,
       respectGitignore: true,
     });
+
+    logger.debug('CodebaseProcessor', 'CodebaseProcessor initialized successfully');
   }
 
   public async processFiles(filePaths: string[], workspaceRoot: string): Promise<ProcessingResult> {
+    logger.info('CodebaseProcessor', 'Starting file processing', {
+      fileCount: filePaths.length,
+      workspaceRoot,
+      filePaths: filePaths.slice(0, 5), // Log first 5 for debugging
+    });
+
     this.statusBarItem.text = '$(sync~spin) PromptPacker: Analyzing files...';
     this.statusBarItem.show();
 
@@ -137,6 +152,11 @@ export class CodebaseProcessor {
 
       return result;
     } catch (error) {
+      logger.error('CodebaseProcessor', 'Critical error in processFiles', error as Error, {
+        filePaths,
+        workspaceRoot,
+      });
+
       this.statusBarItem.text = '$(error) PromptPacker: Processing failed';
       setTimeout(() => this.statusBarItem.hide(), 3000);
       throw error;
