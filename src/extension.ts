@@ -877,294 +877,314 @@ function getPreviewHtml(
   tokenEstimate: number,
   fileTree?: DirectoryNode
 ): string {
-  return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>PromptPacker Preview</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
-        <style>
-            body { 
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                padding: 20px; 
-                margin: 0;
-                background: var(--vscode-editor-background);
-                color: var(--vscode-editor-foreground);
-            }
-            .main-container {
-                display: flex;
-                gap: 20px;
-                height: calc(100vh - 180px);
-            }
-            .header { 
-                border-bottom: 2px solid var(--vscode-panel-border); 
-                padding-bottom: 15px; 
-                margin-bottom: 20px; 
-            }
-            .stats { 
-                display: grid; 
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                gap: 15px; 
-                margin-bottom: 20px; 
-            }
-            .stat-card {
-                background: var(--vscode-input-background);
-                border: 1px solid var(--vscode-input-border);
-                border-radius: 6px;
-                padding: 12px;
-                text-align: center;
-            }
-            .stat-value {
-                font-size: 1.5em;
-                font-weight: bold;
-                color: var(--vscode-textLink-foreground);
-            }
-            .stat-label {
-                font-size: 0.9em;
-                opacity: 0.8;
-                margin-top: 4px;
-            }
-            .content-area {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                min-width: 0;
-            }
-            pre { 
-                border: 1px solid var(--vscode-input-border);
-                margin: 0;
-                border-radius: 6px; 
-                flex: 1;
-                overflow: auto;
-            }
-            pre code.hljs {
-                padding: 20px;
-                white-space: pre-wrap; 
-                word-wrap: break-word; 
-                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-                font-size: 13px;
-                line-height: 1.4;
-                display: block;
-                height: 100%;
-                box-sizing: border-box;
-            }
-            .actions {
-                margin-bottom: 20px;
-                display: flex;
-                gap: 10px;
-            }
-            .btn {
-                background: var(--vscode-button-background);
-                color: var(--vscode-button-foreground);
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 13px;
-            }
-            .btn:hover {
-                background: var(--vscode-button-hoverBackground);
-            }
-            .format-toggle {
-                display: flex;
-                gap: 5px;
-                margin-bottom: 15px;
-                background: var(--vscode-input-background);
-                padding: 4px;
-                border-radius: 6px;
-                border: 1px solid var(--vscode-input-border);
-            }
-            .format-toggle .btn {
-                flex-grow: 1;
-                background: transparent;
-                border: 1px solid transparent;
-                margin: 0;
-                padding: 8px 16px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-            }
-            .format-toggle .btn.active {
-                background: var(--vscode-button-background);
-                color: var(--vscode-button-foreground);
-            }
-            .format-toggle .btn:hover {
-                background: var(--vscode-button-hoverBackground);
-            }
-            .file-tree-container {
-                width: 300px;
-                border-right: 1px solid var(--vscode-panel-border);
-                padding-right: 20px;
-                overflow-y: auto;
-                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-                font-size: 13px;
-            }
-            .file-tree-container h3 {
-                margin-top: 0;
-                margin-bottom: 15px;
-                color: var(--vscode-textLink-foreground);
-            }
-            .file-tree ul {
-                list-style-type: none;
-                padding-left: 16px;
-                margin: 0;
-            }
-            .file-tree li {
-                position: relative;
-                padding-left: 20px;
-                line-height: 1.6;
-                margin: 2px 0;
-            }
-            .file-tree li::before {
-                content: '';
-                position: absolute;
-                left: 0;
-                top: 0;
-                height: 100%;
-                border-left: 1px solid var(--vscode-input-border);
-            }
-            .file-tree li:last-child::before {
-                height: 0.8em;
-            }
-            .file-tree li::after {
-                content: '';
-                position: absolute;
-                left: 0;
-                top: 0.8em;
-                width: 15px;
-                border-top: 1px solid var(--vscode-input-border);
-            }
-            .file-tree .icon {
-                margin-right: 5px;
-            }
-            .file-tree .file-name {
-                color: var(--vscode-editor-foreground);
-            }
-            .file-tree .directory-name {
-                color: var(--vscode-textLink-foreground);
-                font-weight: 500;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>📦 PromptPacker Preview</h1>
-            <div class="actions">
-                <button class="btn" onclick="copyContent()">📋 Copy Current View to Clipboard</button>
-                <button class="btn" onclick="downloadContent()">💾 Download Current View</button>
+  // CRITICAL FIX: Use a separate JSON script tag to avoid template literal interpolation issues
+  const webviewData = {
+    aiOptimizedContent,
+    markdownContent,
+    fileCount,
+    totalSize,
+    tokenEstimate,
+    fileTree,
+  };
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PromptPacker Preview</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            padding: 20px; 
+            margin: 0;
+            background: var(--vscode-editor-background);
+            color: var(--vscode-editor-foreground);
+        }
+        .main-container {
+            display: flex;
+            gap: 20px;
+            height: calc(100vh - 180px);
+        }
+        .header { 
+            border-bottom: 2px solid var(--vscode-panel-border); 
+            padding-bottom: 15px; 
+            margin-bottom: 20px;
+            position: sticky;
+            top: 0;
+            background: var(--vscode-editor-background);
+            z-index: 10;
+        }
+        .stats { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px; 
+            margin-bottom: 20px; 
+        }
+        .stat-card {
+            background: var(--vscode-input-background);
+            border: 1px solid var(--vscode-input-border);
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: var(--vscode-textLink-foreground);
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-top: 4px;
+        }
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        pre { 
+            border: 1px solid var(--vscode-input-border);
+            margin: 0;
+            border-radius: 6px; 
+            flex: 1;
+            overflow: auto;
+        }
+        pre code.hljs {
+            padding: 20px;
+            white-space: pre-wrap; 
+            word-wrap: break-word; 
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            display: block;
+            height: 100%;
+            box-sizing: border-box;
+        }
+        .actions {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .btn:hover {
+            background: var(--vscode-button-hoverBackground);
+        }
+        .format-toggle {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+            background: var(--vscode-input-background);
+            padding: 4px;
+            border-radius: 6px;
+            border: 1px solid var(--vscode-input-border);
+        }
+        .format-toggle .btn {
+            flex-grow: 1;
+            background: transparent;
+            border: 1px solid transparent;
+            margin: 0;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .format-toggle .btn.active {
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
+        .format-toggle .btn:hover {
+            background: var(--vscode-button-hoverBackground);
+        }
+        .file-tree-container {
+            width: 300px;
+            border-right: 1px solid var(--vscode-panel-border);
+            padding-right: 20px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+        }
+        .file-tree-container h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: var(--vscode-textLink-foreground);
+            font-size: 1.1em;
+        }
+        .file-tree ul {
+            list-style-type: none;
+            padding-left: 16px;
+            margin: 0;
+        }
+        .file-tree li {
+            position: relative;
+            padding-left: 20px;
+            line-height: 1.6;
+            margin: 2px 0;
+            color: var(--vscode-editor-foreground);
+        }
+        .file-tree li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            border-left: 1px solid var(--vscode-input-border);
+        }
+        .file-tree li:last-child::before {
+            height: 0.8em;
+        }
+        .file-tree li::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0.8em;
+            width: 15px;
+            border-top: 1px solid var(--vscode-input-border);
+        }
+        .file-tree .icon {
+            margin-right: 5px;
+        }
+        .file-tree .file-name {
+            color: var(--vscode-editor-foreground);
+        }
+        .file-tree .directory-name {
+            color: var(--vscode-textLink-foreground);
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📦 PromptPacker Preview</h1>
+        <div class="actions">
+            <button class="btn" onclick="copyContent()">📋 Copy Current View to Clipboard</button>
+            <button class="btn" onclick="downloadContent()">💾 Download Current View</button>
+        </div>
+        <div class="format-toggle">
+            <button id="btn-ai" class="btn active" onclick="setContent('ai-optimized')">
+                🤖 AI-Optimized (XML)
+            </button>
+            <button id="btn-md" class="btn" onclick="setContent('markdown')">
+                📝 Markdown
+            </button>
+        </div>
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-files">Loading...</div>
+                <div class="stat-label">Files</div>
             </div>
-            <div class="format-toggle">
-                <button id="btn-ai" class="btn active" onclick="setContent('ai-optimized')">
-                    🤖 AI-Optimized (XML)
-                </button>
-                <button id="btn-md" class="btn" onclick="setContent('markdown')">
-                    📝 Markdown
-                </button>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-size">Loading...</div>
+                <div class="stat-label">Total Size</div>
             </div>
-            <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-value">${fileCount}</div>
-                    <div class="stat-label">Files</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${(totalSize / 1024).toFixed(1)} KB</div>
-                    <div class="stat-label">Total Size</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">~${tokenEstimate.toLocaleString()}</div>
-                    <div class="stat-label">Est. Tokens</div>
-                </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-tokens">Loading...</div>
+                <div class="stat-label">Est. Tokens</div>
             </div>
         </div>
-        
-        <div class="main-container">
-            <div class="file-tree-container" id="file-tree-root">
-                <h3>📁 Included Files</h3>
-                <div class="file-tree"></div>
-            </div>
-            
-            <div class="content-area">
-                <pre><code id="content" class="language-xml"></code></pre>
-            </div>
+    </div>
+    
+    <div class="main-container">
+        <div class="file-tree-container" id="file-tree-root">
+            <h3>📁 Included Files</h3>
+            <div class="file-tree"></div>
         </div>
         
-        <script>
-            const vscode = acquireVsCodeApi();
+        <div class="content-area">
+            <pre><code id="content" class="language-xml">Loading content...</code></pre>
+        </div>
+    </div>
+    
+    <!-- Data is stored here as JSON to avoid template literal issues -->
+    <script id="webview-data" type="application/json">${JSON.stringify(webviewData)}</script>
+    
+    <script>
+        const vscode = acquireVsCodeApi();
+        
+        // Parse data from the safe JSON script tag
+        const data = JSON.parse(document.getElementById('webview-data').textContent);
 
-            // Use JSON stringify/parse for robust data transfer
-            const webviewContentData = ${JSON.stringify({
-              'ai-optimized': aiOptimizedContent,
-              markdown: markdownContent,
-            })};
+        const contentEl = document.getElementById('content');
+        const btnAi = document.getElementById('btn-ai');
+        const btnMd = document.getElementById('btn-md');
+        const treeRootEl = document.querySelector('.file-tree');
+
+        function setContent(format) {
+            const content = format === 'ai-optimized' ? data.aiOptimizedContent : data.markdownContent;
+            contentEl.textContent = content;
+            contentEl.className = format === 'markdown' ? 'language-markdown' : 'language-xml';
+            hljs.highlightElement(contentEl);
+            btnAi.classList.toggle('active', format === 'ai-optimized');
+            btnMd.classList.toggle('active', format === 'markdown');
+        }
+
+        function copyContent() {
+            const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
+            const content = currentFormat === 'ai-optimized' ? data.aiOptimizedContent : data.markdownContent;
+            navigator.clipboard.writeText(content).then(() => {
+                vscode.postMessage({ command: 'showInfo', text: 'Copied to clipboard!' });
+            });
+        }
+        
+        function downloadContent() {
+            const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
+            const content = currentFormat === 'ai-optimized' ? data.aiOptimizedContent : data.markdownContent;
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'promptpacker-output.' + (currentFormat === 'markdown' ? 'md' : 'txt');
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function buildTree(node, parentElement) {
+            if (!node.children || node.children.length === 0) return;
             
-            const fileTreeData = ${JSON.stringify(fileTree || null)};
-
-            const contentEl = document.getElementById('content');
-            const btnAi = document.getElementById('btn-ai');
-            const btnMd = document.getElementById('btn-md');
-            const treeRootEl = document.querySelector('.file-tree');
-
-            function setContent(format) {
-                contentEl.textContent = webviewContentData[format];
-                contentEl.className = format === 'markdown' ? 'language-markdown' : 'language-xml';
-                hljs.highlightElement(contentEl);
-                btnAi.classList.toggle('active', format === 'ai-optimized');
-                btnMd.classList.toggle('active', format === 'markdown');
-            }
-
-            function copyContent() {
-                const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
-                navigator.clipboard.writeText(webviewContentData[currentFormat]).then(() => {
-                    vscode.postMessage({ command: 'showInfo', text: 'Copied to clipboard!' });
-                });
-            }
-            
-            function downloadContent() {
-                const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
-                const content = webviewContentData[currentFormat];
-                const blob = new Blob([content], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = \`promptpacker-output.\${currentFormat === 'markdown' ? 'md' : 'txt'}\`;
-                a.click();
-                URL.revokeObjectURL(url);
-            }
-
-            function buildTree(node, parentElement) {
-                if (!node.children || node.children.length === 0) return;
+            const ul = document.createElement('ul');
+            for (const child of node.children) {
+                const li = document.createElement('li');
+                const icon = child.type === 'directory' ? '📁' : '📄';
+                const nameClass = child.type === 'directory' ? 'directory-name' : 'file-name';
+                li.innerHTML = '<span class="icon">' + icon + '</span><span class="' + nameClass + '">' + child.name + '</span>';
                 
-                const ul = document.createElement('ul');
-                for (const child of node.children) {
-                    const li = document.createElement('li');
-                    const icon = child.type === 'directory' ? '📁' : '📄';
-                    const nameClass = child.type === 'directory' ? 'directory-name' : 'file-name';
-                    li.innerHTML = \`<span class="icon">\${icon}</span><span class="\${nameClass}">\${child.name}</span>\`;
-                    
-                    if (child.children && child.children.length > 0) {
-                        buildTree(child, li);
-                    }
-                    ul.appendChild(li);
+                if (child.children && child.children.length > 0) {
+                    buildTree(child, li);
                 }
-                parentElement.appendChild(ul);
+                ul.appendChild(li);
             }
+            parentElement.appendChild(ul);
+        }
 
-            // Initial load
-            setContent('ai-optimized');
-            
-            // Build file tree if data is available
-            if (fileTreeData && fileTreeData.children && fileTreeData.children.length > 0) {
-                buildTree(fileTreeData, treeRootEl);
-            } else {
-                treeRootEl.innerHTML = '<p style="opacity: 0.7; font-style: italic;">No files to display</p>';
-            }
-        </script>
-    </body>
-    </html>`;
+        // Initialize the page
+        document.getElementById('stat-files').textContent = data.fileCount;
+        document.getElementById('stat-size').textContent = (data.totalSize / 1024).toFixed(1) + ' KB';
+        document.getElementById('stat-tokens').textContent = '~' + data.tokenEstimate.toLocaleString();
+        
+        // Build file tree if data is available
+        if (data.fileTree && data.fileTree.children && data.fileTree.children.length > 0) {
+            buildTree(data.fileTree, treeRootEl);
+        } else {
+            treeRootEl.innerHTML = '<p style="opacity: 0.7; font-style: italic;">No files to display</p>';
+        }
+        
+        // Set initial content
+        setContent('ai-optimized');
+    </script>
+</body>
+</html>`;
 }

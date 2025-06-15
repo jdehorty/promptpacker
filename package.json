@@ -1,7 +1,7 @@
 {
   "name": "promptpacker",
   "displayName": "PromptPacker",
-  "version": "1.0.21",
+  "version": "1.0.24",
   "description": "Pack It. Prompt It. Ship It. 🚀\n\nPromptPacker is the ultimate VS Code extension for AI developers and prompt engineers. Instantly combine and organize your code files into perfectly formatted prompts for modern LLMs. Transform scattered code into context-rich prompts with one click.\n\nFeatures:\n• Pack Code to Clipboard: Instantly combine multiple files for AI prompts\n• Smart Context Preservation: Maintains file structure and relationships\n• Multi-file Selection: Right-click multiple files for batch processing\n• AI-Optimized Output: Perfect formatting for LLM consumption",
   "main": "dist/extension.js",
   "scripts": {
@@ -106,21 +106,25 @@
       "explorer/context": [
         {
           "command": "promptpacker.combineFiles",
-          "group": "promptpacker@1"
+          "when": "explorerResourceIsFolder || resourceLangId",
+          "group": "navigation@2"
         },
         {
           "command": "promptpacker.previewOutput",
-          "group": "promptpacker@2"
+          "when": "explorerResourceIsFolder || resourceLangId",
+          "group": "navigation@3"
         }
       ],
       "explorer/context:multi": [
         {
           "command": "promptpacker.combineFiles",
-          "group": "promptpacker@1"
+          "when": "explorerResourceIsFolder || resourceLangId",
+          "group": "navigation@2"
         },
         {
           "command": "promptpacker.previewOutput",
-          "group": "promptpacker@2"
+          "when": "explorerResourceIsFolder || resourceLangId",
+          "group": "navigation@3"
         }
       ]
     },
