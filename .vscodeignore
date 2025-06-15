@@ -1,7 +1,6 @@
 # VS Code Extension Package Ignore - Following Modern Best Practices
 
 # Source files (TypeScript sources not needed at runtime)
-src/**
 **/*.ts
 **/*.map
 tsconfig.json

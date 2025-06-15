@@ -17,11 +17,15 @@
   
   // Extension development
   "files.exclude": {
-    "**/node_modules": true,
-    "**/dist": false, // Keep visible for debugging
     "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
     "**/.DS_Store": true,
     "**/Thumbs.db": true,
+    "**/__pycache__": true,
+    "**/node_modules": true,
+    "**/dist": false,
     "**/bun.lockb": true
   },
   
@@ -48,5 +52,6 @@
   // Extension specific
   "promptpacker.outputFormat": "ai-optimized",
   "promptpacker.maxFileSize": "100kb",
-  "promptpacker.maxTotalSize": "1mb"
+  "promptpacker.maxTotalSize": "1mb",
+  "hide-files.files": []
 }
