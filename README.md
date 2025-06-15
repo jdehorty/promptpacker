@@ -5,7 +5,7 @@
 PromptPacker is the ultimate VS Code extension for AI developers, prompt engineers, and anyone working with Large Language Models (LLMs). Transform scattered code files into perfectly formatted, context-rich prompts for modern AI models with intelligent filtering and LLM-optimized output.
 
 <div align="center">
-  <img src="images/logo.png" alt="PromptPacker Logo" width="128" height="128">
+  <img src="images/logo.png" alt="PromptPacker Logo" width="80%">
 </div>
 
 ## ✨ What Makes PromptPacker Special?
@@ -171,8 +171,8 @@ Built with modern technologies:
 ### Local Development
 ```bash
 # Clone and setup
-git clone https://github.com/promptpacker/promptpacker-vscode
-cd promptpacker-vscode
+git clone https://github.com/jdehorty/promptpacker
+cd promptpacker
 bun install
 
 # Development workflow
@@ -193,9 +193,9 @@ bun run vscode:package # Create VSIX package
 
 ## 🌟 **Community & Support**
 
-- 🐛 **Issues**: [GitHub Issues](https://github.com/promptpacker/promptpacker-vscode/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/promptpacker/promptpacker-vscode/discussions)
-- 📖 **Documentation**: [Full Documentation](https://promptpacker.dev/docs)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/jdehorty/promptpacker/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/jdehorty/promptpacker/discussions)
+- 📖 **Documentation**: [Full Documentation](https://github.com/jdehorty/promptpacker)
 - 🎉 **Show & Tell**: Share your AI wins with `#PromptPacker`
 
 ## 📜 **License**
