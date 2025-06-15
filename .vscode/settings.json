@@ -46,7 +46,7 @@
   },
   
   // Extension specific
-  "promptpacker.outputFormat": "claude-optimized",
+  "promptpacker.outputFormat": "ai-optimized",
   "promptpacker.maxFileSize": "100kb",
   "promptpacker.maxTotalSize": "1mb"
 }

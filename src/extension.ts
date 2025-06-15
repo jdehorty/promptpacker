@@ -15,7 +15,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Register main pack command
   const packCodeDisposable = vscode.commands.registerCommand(
     'promptpacker.packCode',
-    async (...args: any[]) => {
+    async (...args: unknown[]) => {
       try {
         const workspaceRoot = getWorkspaceRoot();
         if (!workspaceRoot) {
@@ -51,7 +51,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Register pack with context command (for backwards compatibility)
   const packCodeWithContextDisposable = vscode.commands.registerCommand(
     'promptpacker.packCodeWithContext',
-    async (...args: any[]) => {
+    async (...args: unknown[]) => {
       // Same as packCode since new version always preserves context based on config
       vscode.commands.executeCommand('promptpacker.packCode', ...args);
     }
@@ -92,7 +92,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Register preview command
   const previewDisposable = vscode.commands.registerCommand(
     'promptpacker.preview',
-    async (...args: any[]) => {
+    async (...args: unknown[]) => {
       try {
         const workspaceRoot = getWorkspaceRoot();
         if (!workspaceRoot) {
@@ -147,7 +147,7 @@ function getWorkspaceRoot(): string | undefined {
   return undefined;
 }
 
-function extractUniqueUris(args: any[]): vscode.Uri[] {
+function extractUniqueUris(args: unknown[]): vscode.Uri[] {
   const flatArgs = flattenArray(args);
   const uriMap: { [path: string]: vscode.Uri } = {};
 
@@ -163,8 +163,8 @@ function extractUniqueUris(args: any[]): vscode.Uri[] {
   return Object.values(uriMap);
 }
 
-function flattenArray(arr: any[]): any[] {
-  return arr.reduce((acc: any[], item: any) => {
+function flattenArray(arr: unknown[]): unknown[] {
+  return arr.reduce((acc: unknown[], item: unknown) => {
     return Array.isArray(item) ? acc.concat(flattenArray(item)) : acc.concat(item);
   }, []);
 }
@@ -248,7 +248,15 @@ async function processUris(uris: vscode.Uri[], config: PromptPackerConfig, works
   });
 }
 
-function getPreviewHtml(result: any, config: PromptPackerConfig): string {
+function getPreviewHtml(
+  result: {
+    formattedOutput: string;
+    files: { length: number };
+    totalSize: number;
+    tokenEstimate: number;
+  },
+  config: PromptPackerConfig
+): string {
   const escapedContent = result.formattedOutput
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

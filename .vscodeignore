@@ -1,4 +1,4 @@
-# VS Code Extension Package Ignore - Following 2025 Best Practices
+# VS Code Extension Package Ignore - Following Modern Best Practices
 
 # Source files (TypeScript sources not needed at runtime)
 src/**

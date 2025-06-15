@@ -15,7 +15,7 @@ export interface PromptPackerConfig {
   maxFileSize: string;
   maxTotalSize: string;
   preserveStructure: boolean;
-  outputFormat: 'claude-optimized' | 'standard' | 'markdown';
+  outputFormat: 'ai-optimized' | 'standard' | 'markdown';
 }
 
 export interface FileMetadata {

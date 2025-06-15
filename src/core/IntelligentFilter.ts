@@ -104,9 +104,9 @@ export class IntelligentFilter {
       const content = fs.readFileSync(gitignorePath, 'utf-8');
       this.gitignorePatterns = content
         .split('\n')
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith('#'))
-        .map(pattern => {
+        .map((line: string) => line.trim())
+        .filter((line: string) => line && !line.startsWith('#'))
+        .map((pattern: string) => {
           // Convert gitignore patterns to glob patterns
           if (pattern.endsWith('/')) {
             return `**/${pattern}**`;

@@ -209,7 +209,7 @@ export class CodebaseProcessor {
       includedFiles.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
       let currentSize = 0;
-      const trimmedFiles = includedFiles.filter(file => {
+      includedFiles.filter(file => {
         if (currentSize + file.size <= maxTotalBytes) {
           currentSize += file.size;
           return true;
@@ -272,7 +272,7 @@ export class CodebaseProcessor {
       .filter(f => f.isIncluded)
       .forEach(file => {
         const parts = file.relativePath.split(path.sep);
-        let current = root;
+        let current: { [key: string]: DirectoryNode } = root;
 
         parts.forEach((part, index) => {
           if (index === parts.length - 1) {
@@ -293,10 +293,12 @@ export class CodebaseProcessor {
                 children: [],
               };
             }
-            if (!current[part].children) {
-              current[part].children = [];
-            }
-            current = current[part].children as any;
+            // Create a temporary object to represent the children structure
+            const childrenObj: { [key: string]: DirectoryNode } = {};
+            current[part].children?.forEach(child => {
+              childrenObj[child.name] = child;
+            });
+            current = childrenObj;
           }
         });
       });

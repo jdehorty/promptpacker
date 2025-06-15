@@ -2,7 +2,7 @@
 
 **Pack It. Prompt It. Ship It.**
 
-PromptPacker is the ultimate VS Code extension for AI developers, prompt engineers, and anyone working with Large Language Models (LLMs). Transform scattered code files into perfectly formatted, context-rich prompts for Claude 3.5 Sonnet, GPT-4o, Gemini 2.0, and other cutting-edge AI models with intelligent filtering and LLM-optimized output.
+PromptPacker is the ultimate VS Code extension for AI developers, prompt engineers, and anyone working with Large Language Models (LLMs). Transform scattered code files into perfectly formatted, context-rich prompts for modern AI models with intelligent filtering and LLM-optimized output.
 
 <div align="center">
   <img src="images/logo.png" alt="PromptPacker Logo" width="128" height="128">
@@ -19,7 +19,7 @@ Stop wasting time manually copying and organizing code files for AI interactions
 - **Context Preservation**: Maintains file relationships without clutter
 
 ### 🧠 **LLM-Optimized Output Formats**
-- **Claude-Optimized**: XML structure designed for Claude 3.5 Sonnet and advanced reasoning models
+- **AI-Optimized**: XML structure designed for advanced reasoning models
 - **Standard Format**: Clean concatenation for quick consultations with any LLM
 - **Markdown Format**: Documentation-friendly output with syntax highlighting
 
@@ -46,7 +46,7 @@ Stop wasting time manually copying and organizing code files for AI interactions
 
 ## 📊 **Output Example**
 
-### Claude-Optimized Format:
+### AI-Optimized Format:
 ```xml
 <codebase_analysis>
   <project_overview>
@@ -102,14 +102,14 @@ Stop wasting time manually copying and organizing code files for AI interactions
   ],
   "maxFileSize": "100kb",
   "maxTotalSize": "1mb",
-  "outputFormat": "claude-optimized"
+      "outputFormat": "ai-optimized"
 }
 ```
 
 ### VS Code Settings
 ```json
 {
-  "promptpacker.outputFormat": "claude-optimized",
+  "promptpacker.outputFormat": "ai-optimized",
   "promptpacker.maxFileSize": "100kb",
   "promptpacker.preserveStructure": true
 }
@@ -131,12 +131,12 @@ code --install-extension promptpacker.promptpacker
 ## 🤖 **Perfect AI Companions**
 
 **Optimized for:**
-- **Claude 3.5 Sonnet** - Native XML format with advanced reasoning
-- **GPT-4o** - Multimodal understanding and code analysis
-- **Gemini 2.0 Flash** - Lightning-fast processing and insights
-- **GitHub Copilot Chat** - In-editor AI assistance
-- **Perplexity AI** - Research and code analysis
-- **Any 2025 LLM** - Flexible output formats
+- **Advanced reasoning models** - Native XML format support
+- **Code-specialized models** - Optimized for code analysis  
+- **Multimodal models** - Rich context understanding
+- **In-editor AI assistants** - Seamless integration
+- **Research-focused AI** - Comprehensive analysis
+- **Modern LLMs** - Flexible output formats
 
 ## 🎯 **Use Cases**
 
@@ -166,7 +166,7 @@ Built with modern technologies:
 - **Pure Bun Runtime**: 25x faster package management and building
 - **TypeScript**: Full type safety with strict mode
 - **Native ES Modules**: Modern JavaScript with optimal bundling
-- **VS Code API**: Following 2025 best practices
+- **VS Code API**: Following modern best practices
 
 ### Local Development
 ```bash
@@ -182,10 +182,10 @@ bun run test         # Run tests
 bun run vscode:package # Create VSIX package
 ```
 
-## 🆕 **What's New in 2.0**
+## 🆕 **Latest Features**
 
 - 🧠 **Intelligent Filtering**: Advanced file classification and relevance scoring
-- 🎯 **LLM-Optimized Formats**: Claude-optimized XML output for better AI understanding
+- 🎯 **LLM-Optimized Formats**: AI-optimized XML output for better understanding
 - ⚡ **Performance**: 45% smaller bundles with pure Bun runtime
 - 🔧 **Configuration**: Flexible `.promptpackerrc` and VS Code settings integration
 - 👁️ **Preview Panel**: Real-time HTML preview with statistics

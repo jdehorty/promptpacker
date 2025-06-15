@@ -18,5 +18,5 @@
   "maxFileSize": "100kb",
   "maxTotalSize": "1mb",
   "preserveStructure": true,
-  "outputFormat": "claude-optimized"
+  "outputFormat": "ai-optimized"
 }

@@ -16,7 +16,7 @@ export class ConfigLoader {
     maxFileSize: '100kb',
     maxTotalSize: '1mb',
     preserveStructure: true,
-    outputFormat: 'claude-optimized',
+    outputFormat: 'ai-optimized',
   };
 
   public static async loadConfig(workspaceRoot: string): Promise<PromptPackerConfig> {
@@ -63,7 +63,7 @@ export class ConfigLoader {
         fileConfig.preserveStructure ??
         ConfigLoader.DEFAULT_CONFIG.preserveStructure,
       outputFormat:
-        vscodeConfig.get<'claude-optimized' | 'standard' | 'markdown'>('outputFormat') ||
+        vscodeConfig.get<'ai-optimized' | 'standard' | 'markdown'>('outputFormat') ||
         fileConfig.outputFormat ||
         ConfigLoader.DEFAULT_CONFIG.outputFormat,
     };
@@ -90,7 +90,7 @@ export class ConfigLoader {
     }
 
     // Validate output format
-    const validFormats = ['claude-optimized', 'standard', 'markdown'];
+    const validFormats = ['ai-optimized', 'standard', 'markdown'];
     if (!validFormats.includes(config.outputFormat)) {
       errors.push(
         `Invalid outputFormat: ${config.outputFormat}. Must be one of: ${validFormats.join(', ')}`

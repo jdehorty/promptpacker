@@ -126,7 +126,7 @@ export class FileClassifier {
         metadata.content = content;
         metadata.informationDensity = Math.min(1, informationDensity * analysis.densityMultiplier);
         metadata.relevanceScore = Math.min(1, relevanceScore * analysis.relevanceMultiplier);
-      } catch (error) {
+      } catch {
         // If we can't read the file, use default scores
         metadata.informationDensity = informationDensity;
         metadata.relevanceScore = relevanceScore;
@@ -149,7 +149,7 @@ export class FileClassifier {
 
     let codeLines = 0;
     let commentLines = 0;
-    let emptyLines = 0;
+    // let emptyLines = 0; // Unused for now
     let importLines = 0;
     let functionCount = 0;
     let classCount = 0;
@@ -160,7 +160,7 @@ export class FileClassifier {
       const trimmed = line.trim();
 
       if (!trimmed) {
-        emptyLines++;
+        // emptyLines++; // Not used in current calculations
       } else if (isSourceCode) {
         if (trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('*')) {
           commentLines++;
@@ -280,7 +280,7 @@ export class FileClassifier {
           if (deps.vscode) techStack.add('VS Code Extension API');
           if (deps.electron) techStack.add('Electron');
           if (deps.jest || deps.mocha || deps.vitest) techStack.add('Testing Framework');
-        } catch (e) {
+        } catch {
           // Ignore parse errors
         }
       }

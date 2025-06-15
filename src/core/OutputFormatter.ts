@@ -1,5 +1,4 @@
-import * as path from 'path';
-import { ProcessingResult, FileMetadata, DirectoryNode, PromptPackerConfig } from '../types';
+import { ProcessingResult, DirectoryNode, PromptPackerConfig } from '../types';
 
 export class OutputFormatter {
   private config: PromptPackerConfig;
@@ -10,8 +9,8 @@ export class OutputFormatter {
 
   public format(result: ProcessingResult): string {
     switch (this.config.outputFormat) {
-      case 'claude-optimized':
-        return this.formatClaudeOptimized(result);
+      case 'ai-optimized':
+        return this.formatAiOptimized(result);
       case 'markdown':
         return this.formatMarkdown(result);
       case 'standard':
@@ -20,7 +19,7 @@ export class OutputFormatter {
     }
   }
 
-  private formatClaudeOptimized(result: ProcessingResult): string {
+  private formatAiOptimized(result: ProcessingResult): string {
     const output: string[] = [];
 
     output.push('<codebase_analysis>');
@@ -174,8 +173,7 @@ export class OutputFormatter {
     const output: string[] = [];
     const prefix = ' '.repeat(indent * 2);
 
-    nodes.forEach((node, index) => {
-      const isLast = index === nodes.length - 1;
+    nodes.forEach(node => {
       const marker = node.type === 'directory' ? '├── ' : '├── ';
 
       output.push(`${prefix}${marker}${node.name}`);
