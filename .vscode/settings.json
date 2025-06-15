@@ -1,12 +1,52 @@
 {
-    "files.exclude": {
-        "**/.git": true,
-        "**/.svn": true,
-        "**/.hg": true,
-        "**/CVS": true,
-        "**/.DS_Store": true,
-        "**/Thumbs.db": true,
-        "**/__pycache__": true
-    },
-    "hide-files.files": []
+  // VS Code workspace settings for PromptPacker development
+  "typescript.preferences.includePackageJsonAutoImports": "on",
+  "typescript.suggest.autoImports": true,
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  
+  // Bun-specific settings
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.format.enable": false, // Use Prettier instead
+  
+  // ESLint and Prettier
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  
+  // Extension development
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": false, // Keep visible for debugging
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/bun.lockb": true
+  },
+  
+  // Search and file watching
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/*.map": true,
+    "**/bun.lockb": true
+  },
+  
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.git/**": true
+  },
+  
+  // Terminal
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.env.osx": {
+    "PATH": "${env:PATH}:${env:HOME}/.bun/bin"
+  },
+  
+  // Extension specific
+  "promptpacker.outputFormat": "claude-optimized",
+  "promptpacker.maxFileSize": "100kb",
+  "promptpacker.maxTotalSize": "1mb"
 }

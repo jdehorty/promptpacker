@@ -1,0 +1,46 @@
+{
+  // VS Code launch configuration for extension development
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "preLaunchTask": "${workspaceFolder}/bun: build - dev"
+    },
+    {
+      "name": "Run Extension (Watch Mode)",
+      "type": "extensionHost", 
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "preLaunchTask": "${workspaceFolder}/bun: watch",
+      "presentation": {
+        "reveal": "never"
+      }
+    },
+    {
+      "name": "Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--extensionTestsPath=${workspaceFolder}/dist/test/suite/index"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dist/test/**/*.js"
+      ],
+      "preLaunchTask": "${workspaceFolder}/bun: build - dev"
+    }
+  ]
+}

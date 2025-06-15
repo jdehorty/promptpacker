@@ -1,0 +1,65 @@
+# VS Code Extension Package Ignore - Following 2025 Best Practices
+
+# Source files (TypeScript sources not needed at runtime)
+src/**
+**/*.ts
+**/*.map
+tsconfig.json
+
+# Development dependencies and configuration
+node_modules/**
+bunfig.toml
+eslint.config.js
+.prettierrc
+.prettierignore
+
+# Development tools and artifacts
+**/*.test.js
+**/*.test.ts
+**/*.spec.js
+**/*.spec.ts
+test/**
+tests/**
+coverage/**
+
+# Git and version control
+.git/**
+.gitignore
+.gitattributes
+
+# IDE and editor files
+.vscode/**
+.idea/**
+*.sublime-*
+.DS_Store
+Thumbs.db
+
+# Documentation and development files
+IMPLEMENTATION_SUMMARY.md
+BUN_MIGRATION_SUMMARY.md
+.promptpackerrc.example
+CONTRIBUTING.md
+DEVELOPMENT.md
+
+# Build artifacts and cache
+.nyc_output/**
+.cache/**
+.tmp/**
+.temp/**
+
+# OS specific files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Bun specific
+bun.lockb
+
+# Only include what's needed at runtime:
+# - dist/ (compiled output)
+# - package.json
+# - README.md
+# - LICENSE
+# - images/
+# - CHANGELOG.md (if exists)

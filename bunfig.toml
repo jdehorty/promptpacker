@@ -1,0 +1,19 @@
+# Bun configuration for PromptPacker VS Code Extension - 2025 Best Practices
+
+[install]
+# Use Bun's package management optimizations
+auto = "fallback"
+production = false
+optional = true
+dev = true
+peer = false
+exact = false
+frozenLockfile = false
+
+[install.cache]
+# Enable advanced caching
+disable = false
+
+[install.scopes]
+# Prefer faster registry for common packages
+"@types" = "https://registry.npmjs.org/" 

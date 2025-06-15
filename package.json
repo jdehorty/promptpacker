@@ -5,24 +5,29 @@
   "description": "Pack It. Prompt It. Ship It. 🚀\n\nPromptPacker is the ultimate VS Code extension for AI developers and prompt engineers. Instantly combine and organize your code files into perfectly formatted prompts for ChatGPT, Claude, and other LLMs. Transform scattered code into context-rich prompts with one click.\n\nFeatures:\n• Pack Code to Clipboard: Instantly combine multiple files for AI prompts\n• Smart Context Preservation: Maintains file structure and relationships\n• Multi-file Selection: Right-click multiple files for batch processing\n• AI-Optimized Output: Perfect formatting for LLM consumption",
   "main": "dist/extension.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "compile": "tsc -p .",
-    "vscode:prepublish": "npm run compile",
-    "vscode:package": "vsce package"
+    "test": "bun test",
+    "build": "bun build ./src/extension.ts --outdir ./dist --target node --external vscode --minify --sourcemap",
+    "build:dev": "bun build ./src/extension.ts --outdir ./dist --target node --external vscode --sourcemap",
+    "vscode:prepublish": "bun run build",
+    "vscode:package": "vsce package",
+    "watch": "bun build ./src/extension.ts --outdir ./dist --target node --external vscode --watch --sourcemap",
+    "lint": "bunx eslint src --ext .ts",
+    "lint:fix": "bunx eslint src --ext .ts --fix",
+    "format": "bunx prettier --write \"src/**/*.ts\"",
+    "format:check": "bunx prettier --check \"src/**/*.ts\"",
+    "clean": "rm -rf dist && rm -rf node_modules",
+    "dev": "bun run build:dev && bun run watch"
   },
-  "author": {
-    "name": "PromptPacker Team",
-    "email": "hello@promptpacker.dev"
-  },
-  "publisher": "PromptPacker",
+
+  "publisher": "jdehorty",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/promptpacker/promptpacker-vscode.git"
+    "url": "https://github.com/jdehorty/promptpacker-vscode.git"
   },
-  "homepage": "https://github.com/promptpacker/promptpacker-vscode",
+  "homepage": "https://github.com/jdehorty/promptpacker-vscode",
   "bugs": {
-    "url": "https://github.com/promptpacker/promptpacker-vscode/issues"
+    "url": "https://github.com/jdehorty/promptpacker-vscode/issues"
   },
   "keywords": [
     "ai",
@@ -49,20 +54,27 @@
     "Snippets",
     "Programming Languages"
   ],
-  "activationEvents": [
-    "onCommand:promptpacker.packCode",
-    "onCommand:promptpacker.packCodeWithContext"
-  ],
+  "activationEvents": [],
   "contributes": {
     "commands": [
       {
         "command": "promptpacker.packCode",
-        "title": "📦 Pack Code for AI",
+        "title": "📦 Pack Code for AI Analysis",
         "category": "PromptPacker"
       },
       {
         "command": "promptpacker.packCodeWithContext",
         "title": "🎯 Pack Code with File Context",
+        "category": "PromptPacker"
+      },
+      {
+        "command": "promptpacker.configure",
+        "title": "⚙️ Configure PromptPacker",
+        "category": "PromptPacker"
+      },
+      {
+        "command": "promptpacker.preview",
+        "title": "👁️ Preview Packed Output",
         "category": "PromptPacker"
       }
     ],
@@ -73,8 +85,12 @@
           "group": "promptpacker@1"
         },
         {
-          "command": "promptpacker.packCodeWithContext",
+          "command": "promptpacker.preview",
           "group": "promptpacker@2"
+        },
+        {
+          "command": "promptpacker.packCodeWithContext",
+          "group": "promptpacker@3"
         }
       ],
       "explorer/context:multi": [
@@ -83,20 +99,96 @@
           "group": "promptpacker@1"
         },
         {
-          "command": "promptpacker.packCodeWithContext",
+          "command": "promptpacker.preview",
           "group": "promptpacker@2"
+        },
+        {
+          "command": "promptpacker.packCodeWithContext",
+          "group": "promptpacker@3"
         }
       ]
+    },
+    "configuration": {
+      "title": "PromptPacker",
+      "properties": {
+        "promptpacker.ignore": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/*.test.{js,ts,jsx,tsx}",
+            "**/*.spec.{js,ts,jsx,tsx}",
+            "**/coverage/**",
+            "**/.env*"
+          ],
+          "description": "Glob patterns for files to ignore"
+        },
+        "promptpacker.include": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "src/**/*.{js,ts,jsx,tsx}",
+            "**/*.md",
+            "package.json",
+            "*.config.{js,ts,json}"
+          ],
+          "description": "Glob patterns for files to include"
+        },
+        "promptpacker.maxFileSize": {
+          "type": "string",
+          "default": "100kb",
+          "description": "Maximum file size to include (e.g., '100kb', '1mb')"
+        },
+        "promptpacker.maxTotalSize": {
+          "type": "string",
+          "default": "1mb",
+          "description": "Maximum total size of all files (e.g., '1mb', '5mb')"
+        },
+        "promptpacker.preserveStructure": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to preserve file paths and directory structure in output"
+        },
+        "promptpacker.outputFormat": {
+          "type": "string",
+          "enum": [
+            "claude-optimized",
+            "standard",
+            "markdown"
+          ],
+          "default": "claude-optimized",
+          "description": "Output format for packed code"
+        }
+      }
     }
   },
   "dependencies": {
-    "fs": "^0.0.1-security",
-    "path": "^0.12.7"
+    "minimatch": "^10.0.3"
   },
   "devDependencies": {
+    "@types/minimatch": "^5.1.2",
     "@types/vscode": "^1.92.0",
-    "typescript": "^5.5.4",
+    "@typescript-eslint/eslint-plugin": "8.34.0",
+    "@typescript-eslint/parser": "8.34.0",
+    "bun-types": "1.2.16",
+    "eslint": "9.29.0",
+    "eslint-config-prettier": "10.1.5",
+    "eslint-plugin-prettier": "5.4.1",
+    "prettier": "3.5.3",
+    "typescript-eslint": "8.34.0",
     "vsce": "^2.6.3"
   },
-  "icon": "images/logo.png"
+  "icon": "images/logo.png",
+  "trustedDependencies": [
+    "vsce"
+  ],
+  "bun": {
+    "target": "node",
+    "external": ["vscode"],
+    "minify": true,
+    "sourcemap": true
+  }
 }

@@ -1,0 +1,22 @@
+{
+  "ignore": [
+    "**/*.test.{js,ts,jsx,tsx}",
+    "**/*.spec.{js,ts,jsx,tsx}",
+    "**/coverage/**",
+    "**/.env*",
+    "**/logs/**",
+    "**/*.log"
+  ],
+  "include": [
+    "src/**/*.{js,ts,jsx,tsx}",
+    "**/*.md",
+    "package.json",
+    "*.config.{js,ts,json}",
+    "**/*.yml",
+    "**/*.yaml"
+  ],
+  "maxFileSize": "100kb",
+  "maxTotalSize": "1mb",
+  "preserveStructure": true,
+  "outputFormat": "claude-optimized"
+}

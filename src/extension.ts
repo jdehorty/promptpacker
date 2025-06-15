@@ -1,163 +1,387 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ConfigLoader } from './core/ConfigLoader';
+import { CodebaseProcessor } from './core/CodebaseProcessor';
+import { PromptPackerConfig } from './types';
+
+let statusBarItem: vscode.StatusBarItem;
 
 export function activate(context: vscode.ExtensionContext) {
-  let packCodeDisposable = vscode.commands.registerCommand('promptpacker.packCode', (...args: any[]) => {
-    const uris: vscode.Uri[] = extractUniqueUris(args);
+  // Create status bar item
+  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  context.subscriptions.push(statusBarItem);
 
-    if (uris.length > 0) {
-      const filePaths: string[] = [];
-
-      uris.forEach(uri => {
-        if (uri instanceof vscode.Uri) {
-          const isDirectory = fs.statSync(uri.fsPath).isDirectory();
-          if (isDirectory) {
-            const files = traverseFolder(uri.fsPath);
-            filePaths.push(...files);
-          } else {
-            filePaths.push(uri.fsPath);
-          }
+  // Register main pack command
+  const packCodeDisposable = vscode.commands.registerCommand(
+    'promptpacker.packCode',
+    async (...args: any[]) => {
+      try {
+        const workspaceRoot = getWorkspaceRoot();
+        if (!workspaceRoot) {
+          vscode.window.showErrorMessage('No workspace folder open');
+          return;
         }
-      });
 
-      if (filePaths.length > 0) {
-        packCodeFiles(filePaths);
-      } else {
-        vscode.window.showErrorMessage('No files found in the selected folders to pack.');
-      }
-    } else {
-      vscode.window.showErrorMessage('Please select one or more files or folders to pack for AI prompts.');
-    }
-  });
+        const config = await ConfigLoader.loadConfig(workspaceRoot);
+        const validation = ConfigLoader.validateConfig(config);
 
-  let packCodeWithContextDisposable = vscode.commands.registerCommand('promptpacker.packCodeWithContext', (...args: any[]) => {
-    const uris: vscode.Uri[] = extractUniqueUris(args);
-
-    if (uris.length > 0) {
-      const filePaths: string[] = [];
-
-      uris.forEach(uri => {
-        if (uri instanceof vscode.Uri) {
-          const isDirectory = fs.statSync(uri.fsPath).isDirectory();
-          if (isDirectory) {
-            const files = traverseFolder(uri.fsPath);
-            filePaths.push(...files);
-          } else {
-            filePaths.push(uri.fsPath);
-          }
+        if (!validation.valid) {
+          vscode.window.showErrorMessage(`Invalid configuration: ${validation.errors.join(', ')}`);
+          return;
         }
-      });
 
-      if (filePaths.length > 0) {
-        packCodeFiles(filePaths, true);
-      } else {
-        vscode.window.showErrorMessage('No files found in the selected folders to pack with context.');
+        const uris = extractUniqueUris(args);
+        if (uris.length === 0) {
+          vscode.window.showErrorMessage(
+            'Please select one or more files or folders to pack for AI prompts.'
+          );
+          return;
+        }
+
+        await processUris(uris, config, workspaceRoot);
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `PromptPacker error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
       }
-    } else {
-      vscode.window.showErrorMessage('Please select one or more files or folders to pack with file context for AI prompts.');
     }
-  });
+  );
 
-  context.subscriptions.push(packCodeDisposable, packCodeWithContextDisposable);
+  // Register pack with context command (for backwards compatibility)
+  const packCodeWithContextDisposable = vscode.commands.registerCommand(
+    'promptpacker.packCodeWithContext',
+    async (...args: any[]) => {
+      // Same as packCode since new version always preserves context based on config
+      vscode.commands.executeCommand('promptpacker.packCode', ...args);
+    }
+  );
+
+  // Register configuration command
+  const configureDisposable = vscode.commands.registerCommand(
+    'promptpacker.configure',
+    async () => {
+      const workspaceRoot = getWorkspaceRoot();
+      if (!workspaceRoot) {
+        vscode.window.showErrorMessage('No workspace folder open');
+        return;
+      }
+
+      const configPath = path.join(workspaceRoot, '.promptpackerrc');
+
+      if (!fs.existsSync(configPath)) {
+        const create = await vscode.window.showInformationMessage(
+          'No .promptpackerrc file found. Would you like to create one?',
+          'Yes',
+          'No'
+        );
+
+        if (create === 'Yes') {
+          const defaultConfig = await ConfigLoader.loadConfig(workspaceRoot);
+          await ConfigLoader.saveConfig(workspaceRoot, defaultConfig);
+        } else {
+          return;
+        }
+      }
+
+      const document = await vscode.workspace.openTextDocument(configPath);
+      await vscode.window.showTextDocument(document);
+    }
+  );
+
+  // Register preview command
+  const previewDisposable = vscode.commands.registerCommand(
+    'promptpacker.preview',
+    async (...args: any[]) => {
+      try {
+        const workspaceRoot = getWorkspaceRoot();
+        if (!workspaceRoot) {
+          vscode.window.showErrorMessage('No workspace folder open');
+          return;
+        }
+
+        const config = await ConfigLoader.loadConfig(workspaceRoot);
+        const uris = extractUniqueUris(args);
+
+        if (uris.length === 0) {
+          vscode.window.showErrorMessage('Please select one or more files or folders to preview.');
+          return;
+        }
+
+        const processor = new CodebaseProcessor(config, statusBarItem);
+        const filePaths = await expandUris(uris);
+        const result = await processor.processFiles(filePaths, workspaceRoot);
+
+        // Create preview panel
+        const panel = vscode.window.createWebviewPanel(
+          'promptPackerPreview',
+          'PromptPacker Preview',
+          vscode.ViewColumn.One,
+          {
+            enableScripts: true,
+          }
+        );
+
+        panel.webview.html = getPreviewHtml(result, config);
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `PromptPacker preview error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+    }
+  );
+
+  context.subscriptions.push(
+    packCodeDisposable,
+    packCodeWithContextDisposable,
+    configureDisposable,
+    previewDisposable
+  );
+}
+
+function getWorkspaceRoot(): string | undefined {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (workspaceFolders && workspaceFolders.length > 0) {
+    return workspaceFolders[0].uri.fsPath;
+  }
+  return undefined;
 }
 
 function extractUniqueUris(args: any[]): vscode.Uri[] {
   const flatArgs = flattenArray(args);
-
-  // Object to keep track of URIs by their paths
   const uriMap: { [path: string]: vscode.Uri } = {};
 
   flatArgs.forEach(arg => {
     if (arg instanceof vscode.Uri) {
       const path = arg.fsPath;
-      // Add URI to map if it's not already overridden by a parent directory
       if (!isOverriddenByParent(path, uriMap)) {
         uriMap[path] = arg;
       }
     }
   });
 
-  // Filter out any URIs that are children of existing URIs
-  const uniqueUris = Object.values(uriMap);
-
-  return uniqueUris;
+  return Object.values(uriMap);
 }
 
 function flattenArray(arr: any[]): any[] {
   return arr.reduce((acc: any[], item: any) => {
-    return Array.isArray(item)
-      ? acc.concat(flattenArray(item))
-      : acc.concat(item);
+    return Array.isArray(item) ? acc.concat(flattenArray(item)) : acc.concat(item);
   }, []);
 }
 
 function isOverriddenByParent(path: string, uriMap: { [path: string]: vscode.Uri }): boolean {
   for (const existingPath in uriMap) {
     if (path.startsWith(existingPath) && path !== existingPath) {
-      return true; // Path is a child of an existing path
+      return true;
     }
   }
   return false;
 }
 
-function packCodeFiles(filePaths: string[], includeFileContext: boolean = false) {
-  let packedCode = '';
+async function expandUris(uris: vscode.Uri[]): Promise<string[]> {
+  const filePaths: string[] = [];
 
-  filePaths.forEach((filePath) => {
-    const relativePath = getRelativePath(filePath);
-    const fileContent = fs.readFileSync(filePath, 'utf8');
-    const codeSnippet = includeFileContext ? `// ${relativePath}\n${fileContent.trim()}` : fileContent.trim();
-    packedCode += `${codeSnippet}\n\n`;
-  });
+  for (const uri of uris) {
+    const stat = await fs.promises.stat(uri.fsPath);
 
-  const codePreview = packedCode.substr(0, 100);
-
-  vscode.env.clipboard.writeText(packedCode)
-    .then(() => {
-      const fileCount = filePaths.length;
-      const contextText = includeFileContext ? ' with file context' : '';
-      const message = `🚀 PromptPacker: ${fileCount} file${fileCount > 1 ? 's' : ''} packed${contextText} and copied to clipboard!\n\nReady for AI prompting:\n${codePreview}...`;
-      vscode.window.showInformationMessage(message);
-    })
-    .then(undefined, (error: any) => {
-      vscode.window.showErrorMessage('PromptPacker failed to pack code to clipboard: ' + error);
-    });
-}
-
-function getRelativePath(filePath: string): string {
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (workspaceFolders) {
-    for (const folder of workspaceFolders) {
-      const folderPath = folder.uri.fsPath;
-      if (filePath.startsWith(folderPath)) {
-        const relativePath = path.relative(folderPath, filePath).replace(/\\/g, '/');
-        return relativePath;
-      }
+    if (stat.isDirectory()) {
+      const files = await traverseFolder(uri.fsPath);
+      filePaths.push(...files);
+    } else {
+      filePaths.push(uri.fsPath);
     }
   }
 
-  return filePath;
+  return filePaths;
 }
 
-function traverseFolder(folderPath: string): string[] {
-  let result: string[] = [];
+async function traverseFolder(folderPath: string): Promise<string[]> {
+  const result: string[] = [];
+  const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
 
-  const files = fs.readdirSync(folderPath);
+  for (const entry of entries) {
+    const fullPath = path.join(folderPath, entry.name);
 
-  files.forEach((file: any) => {
-    const filePath = path.join(folderPath, file);
-    const stat = fs.statSync(filePath);
-
-    if (stat.isFile()) {
-      result.push(filePath);
-    } else if (stat.isDirectory()) {
-      const nestedFiles = traverseFolder(filePath);
+    if (entry.isFile()) {
+      result.push(fullPath);
+    } else if (entry.isDirectory()) {
+      const nestedFiles = await traverseFolder(fullPath);
       result.push(...nestedFiles);
     }
-  });
+  }
 
   return result;
 }
 
-export function deactivate() { }
+async function processUris(uris: vscode.Uri[], config: PromptPackerConfig, workspaceRoot: string) {
+  const processor = new CodebaseProcessor(config, statusBarItem);
+
+  // Process directories and files
+  const results = await Promise.all(
+    uris.map(async uri => {
+      const stat = await fs.promises.stat(uri.fsPath);
+
+      if (stat.isDirectory()) {
+        return processor.processDirectory(uri.fsPath, workspaceRoot);
+      } else {
+        return processor.processFiles([uri.fsPath], workspaceRoot);
+      }
+    })
+  );
+
+  // Merge results
+  const mergedResult = results[0]; // For now, just use the first result
+  // TODO: Implement proper merging of multiple results
+
+  // Copy to clipboard
+  await vscode.env.clipboard.writeText(mergedResult.formattedOutput);
+
+  // Show notification
+  const fileCount = mergedResult.files.length;
+  const tokenEstimate = mergedResult.tokenEstimate;
+  const message = `🚀 PromptPacker: ${fileCount} file${fileCount > 1 ? 's' : ''} packed (~${tokenEstimate.toLocaleString()} tokens) and copied to clipboard!`;
+
+  vscode.window.showInformationMessage(message, 'Preview').then(selection => {
+    if (selection === 'Preview') {
+      vscode.commands.executeCommand('promptpacker.preview', ...uris);
+    }
+  });
+}
+
+function getPreviewHtml(result: any, config: PromptPackerConfig): string {
+  const escapedContent = result.formattedOutput
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PromptPacker Preview</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .header {
+            background: #007acc;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stat-label {
+            font-size: 0.9em;
+            color: #666;
+        }
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #007acc;
+        }
+        .content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        pre {
+            background: #f8f8f8;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        .copy-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .copy-button:hover {
+            background: #005a9e;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📦 PromptPacker Preview</h1>
+        <p>Review your packed code before copying to clipboard</p>
+    </div>
+    
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-label">Files Included</div>
+            <div class="stat-value">${result.files.length}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Total Size</div>
+            <div class="stat-value">${(result.totalSize / 1024).toFixed(1)} KB</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Token Estimate</div>
+            <div class="stat-value">${result.tokenEstimate.toLocaleString()}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Output Format</div>
+            <div class="stat-value">${config.outputFormat}</div>
+        </div>
+    </div>
+    
+    <div class="content">
+        <h2>Output</h2>
+        <pre>${escapedContent}</pre>
+    </div>
+    
+    <button class="copy-button" onclick="copyToClipboard()">
+        📋 Copy to Clipboard
+    </button>
+    
+    <script>
+        const vscode = acquireVsCodeApi();
+        
+        function copyToClipboard() {
+            const content = ${JSON.stringify(result.formattedOutput)};
+            navigator.clipboard.writeText(content).then(() => {
+                vscode.postMessage({ type: 'copied' });
+            });
+        }
+    </script>
+</body>
+</html>`;
+}
+
+export function deactivate() {
+  if (statusBarItem) {
+    statusBarItem.dispose();
+  }
+}
