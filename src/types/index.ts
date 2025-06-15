@@ -26,6 +26,7 @@ export interface FileMetadata {
   content?: string;
   informationDensity?: number;
   relevanceScore?: number;
+  priority?: number;
   isIncluded: boolean;
   exclusionReason?: string;
 }

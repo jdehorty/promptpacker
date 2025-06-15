@@ -25,7 +25,7 @@
     "**/Thumbs.db": true,
     "**/__pycache__": true,
     "**/node_modules": true,
-    "**/dist": false,
+    "**/dist": true,
     "**/bun.lockb": true
   },
   
