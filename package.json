@@ -1,7 +1,7 @@
 {
   "name": "promptpacker",
   "displayName": "PromptPacker",
-  "version": "1.0.24",
+  "version": "1.0.32",
   "description": "Pack It. Prompt It. Ship It. 🚀\n\nPromptPacker is the ultimate VS Code extension for AI developers and prompt engineers. Instantly combine and organize your code files into perfectly formatted prompts for modern LLMs. Transform scattered code into context-rich prompts with one click.\n\nFeatures:\n• Pack Code to Clipboard: Instantly combine multiple files for AI prompts\n• Smart Context Preservation: Maintains file structure and relationships\n• Multi-file Selection: Right-click multiple files for batch processing\n• AI-Optimized Output: Perfect formatting for LLM consumption",
   "main": "dist/extension.js",
   "scripts": {
@@ -68,7 +68,7 @@
     "commands": [
       {
         "command": "promptpacker.combineFiles",
-        "title": "📦 Combine Files to Clipboard",
+        "title": "📦 Pack as AI Prompt",
         "category": "PromptPacker"
       },
       {
@@ -78,7 +78,7 @@
       },
       {
         "command": "promptpacker.previewOutput",
-        "title": "👁️ Preview Combined Output",
+        "title": "👁️ Preview AI Prompt",
         "category": "PromptPacker"
       },
       {
@@ -231,11 +231,24 @@
           ],
           "default": "ai-optimized",
           "description": "Output format for packed code"
+        },
+        "promptpacker.tokenModel": {
+          "type": "string",
+          "enum": [
+            "gpt-4",
+            "gpt-3.5-turbo",
+            "llama",
+            "claude",
+            "estimate"
+          ],
+          "default": "estimate",
+          "description": "Token counting model for accurate estimation"
         }
       }
     }
   },
   "dependencies": {
+    "gpt-tokenizer": "^3.0.1",
     "minimatch": "^10.0.3"
   },
   "devDependencies": {

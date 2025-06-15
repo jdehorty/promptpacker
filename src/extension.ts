@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import minimatch from 'minimatch';
+import { minimatch } from 'minimatch';
 
 // ==========================================
 // Types & Interfaces
@@ -16,6 +16,7 @@ interface PromptPackerConfig {
   maxTotalSize: string;
   preserveStructure: boolean;
   outputFormat: 'ai-optimized' | 'standard' | 'markdown';
+  tokenModel: 'gpt-4' | 'gpt-3.5-turbo' | 'llama' | 'claude' | 'estimate';
 }
 
 interface ProcessedFiles {
@@ -147,7 +148,7 @@ async function runPreview(args: any[]) {
       true
     );
 
-    const tokenEstimate = Math.ceil(aiOptimizedCode.length / 4);
+    const tokenEstimate = await countTokens(aiOptimizedCode, config.tokenModel);
 
     const panel = vscode.window.createWebviewPanel(
       'promptPackerPreview',
@@ -409,6 +410,50 @@ async function generateCombinedCode(
 }
 
 // ==========================================
+// Token Counting Utilities
+// ==========================================
+
+/**
+ * Universal token counting using gpt-tokenizer as baseline
+ * This provides accurate counts for OpenAI models and reasonable estimates for others
+ */
+async function countTokens(text: string, model: string): Promise<number> {
+  try {
+    // Import gpt-tokenizer dynamically to handle potential import issues
+    const { countTokens: gptCountTokens } = await import('gpt-tokenizer');
+    
+    // Use gpt-tokenizer as universal baseline for all models
+    // This is the widely accepted approach since:
+    // 1. It's the most accurate tokenizer available
+    // 2. Provides reasonable estimates for non-OpenAI models
+    // 3. Most AI applications primarily target OpenAI models
+    const tokenCount = gptCountTokens(text);
+    
+    // Apply model-specific adjustments if needed
+    switch (model) {
+      case 'gpt-4':
+      case 'gpt-3.5-turbo':
+        return tokenCount; // Direct count for OpenAI models
+      case 'claude':
+        return Math.ceil(tokenCount * 1.0); // Claude is very similar to GPT tokenization
+      case 'llama':
+        return Math.ceil(tokenCount * 1.1); // LLaMA tends to use slightly more tokens
+      default:
+        return tokenCount; // Use GPT tokenization as universal baseline
+    }
+  } catch (error) {
+    console.warn('gpt-tokenizer failed, falling back to estimation:', error);
+    return estimateTokensSimple(text);
+  }
+}
+
+function estimateTokensSimple(text: string): number {
+  // Fallback estimation when gpt-tokenizer is unavailable
+  // Based on empirical analysis: ~3.5 characters per token on average
+  return Math.ceil(text.length / 3.5);
+}
+
+// ==========================================
 // Utility Functions
 // ==========================================
 
@@ -491,6 +536,7 @@ function getConfig(): PromptPackerConfig {
     maxTotalSize: config.get('maxTotalSize') || '1mb',
     preserveStructure: config.get('preserveStructure') ?? true,
     outputFormat: config.get('outputFormat') || 'ai-optimized',
+    tokenModel: config.get('tokenModel') || 'estimate',
   };
 }
 
@@ -877,7 +923,6 @@ function getPreviewHtml(
   tokenEstimate: number,
   fileTree?: DirectoryNode
 ): string {
-  // CRITICAL FIX: Use a separate JSON script tag to avoid template literal interpolation issues
   const webviewData = {
     aiOptimizedContent,
     markdownContent,
@@ -887,11 +932,23 @@ function getPreviewHtml(
     fileTree,
   };
 
+  // Generate a nonce for CSP
+  const nonce = Math.random().toString(36).substring(2, 15);
+  
+  // Properly escape the JSON data for HTML context
+  const escapedJsonData = JSON.stringify(webviewData)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://cdnjs.cloudflare.com;">
     <title>PromptPacker Preview</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -908,7 +965,7 @@ function getPreviewHtml(
         .main-container {
             display: flex;
             gap: 20px;
-            height: calc(100vh - 180px);
+            height: calc(100vh - 230px);
         }
         .header { 
             border-bottom: 2px solid var(--vscode-panel-border); 
@@ -918,6 +975,9 @@ function getPreviewHtml(
             top: 0;
             background: var(--vscode-editor-background);
             z-index: 10;
+        }
+        .header h1 {
+            margin-top: 0;
         }
         .stats { 
             display: grid; 
@@ -954,6 +1014,7 @@ function getPreviewHtml(
             border-radius: 6px; 
             flex: 1;
             overflow: auto;
+            background: var(--vscode-textCodeBlock-background);
         }
         pre code.hljs {
             padding: 20px;
@@ -963,7 +1024,7 @@ function getPreviewHtml(
             font-size: 13px;
             line-height: 1.4;
             display: block;
-            height: 100%;
+            min-height: 100%;
             box-sizing: border-box;
         }
         .actions {
@@ -1068,13 +1129,13 @@ function getPreviewHtml(
     </style>
 </head>
 <body>
-    <div class="header">
+    <div class="header" id="header">
         <h1>📦 PromptPacker Preview</h1>
-        <div class="actions">
-            <button class="btn" onclick="copyContent()">📋 Copy Current View to Clipboard</button>
+        <div class="actions" id="actions-bar">
+            <button class="btn" onclick="copyContent()">📋 Copy Current View</button>
             <button class="btn" onclick="downloadContent()">💾 Download Current View</button>
         </div>
-        <div class="format-toggle">
+        <div class="format-toggle" id="format-toggle">
             <button id="btn-ai" class="btn active" onclick="setContent('ai-optimized')">
                 🤖 AI-Optimized (XML)
             </button>
@@ -1082,7 +1143,7 @@ function getPreviewHtml(
                 📝 Markdown
             </button>
         </div>
-        <div class="stats">
+        <div class="stats" id="stats-grid">
             <div class="stat-card">
                 <div class="stat-value" id="stat-files">Loading...</div>
                 <div class="stat-label">Files</div>
@@ -1100,7 +1161,7 @@ function getPreviewHtml(
     
     <div class="main-container">
         <div class="file-tree-container" id="file-tree-root">
-            <h3>📁 Included Files</h3>
+            <h3 id="file-tree-title">📁 Included Files</h3>
             <div class="file-tree"></div>
         </div>
         
@@ -1110,9 +1171,11 @@ function getPreviewHtml(
     </div>
     
     <!-- Data is stored here as JSON to avoid template literal issues -->
-    <script id="webview-data" type="application/json">${JSON.stringify(webviewData)}</script>
+    <script id="webview-data" type="application/json">
+${escapedJsonData}
+    </script>
     
-    <script>
+    <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
         
         // Parse data from the safe JSON script tag
@@ -1124,9 +1187,9 @@ function getPreviewHtml(
         const treeRootEl = document.querySelector('.file-tree');
 
         function setContent(format) {
-            const content = format === 'ai-optimized' ? data.aiOptimizedContent : data.markdownContent;
+            const content = (format === 'ai-optimized') ? data.aiOptimizedContent : data.markdownContent;
             contentEl.textContent = content;
-            contentEl.className = format === 'markdown' ? 'language-markdown' : 'language-xml';
+            contentEl.className = 'hljs language-' + (format === 'markdown' ? 'markdown' : 'xml');
             hljs.highlightElement(contentEl);
             btnAi.classList.toggle('active', format === 'ai-optimized');
             btnMd.classList.toggle('active', format === 'markdown');
@@ -1134,7 +1197,7 @@ function getPreviewHtml(
 
         function copyContent() {
             const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
-            const content = currentFormat === 'ai-optimized' ? data.aiOptimizedContent : data.markdownContent;
+            const content = (currentFormat === 'ai-optimized') ? data.aiOptimizedContent : data.markdownContent;
             navigator.clipboard.writeText(content).then(() => {
                 vscode.postMessage({ command: 'showInfo', text: 'Copied to clipboard!' });
             });
@@ -1142,7 +1205,7 @@ function getPreviewHtml(
         
         function downloadContent() {
             const currentFormat = btnAi.classList.contains('active') ? 'ai-optimized' : 'markdown';
-            const content = currentFormat === 'ai-optimized' ? data.aiOptimizedContent : data.markdownContent;
+            const content = (currentFormat === 'ai-optimized') ? data.aiOptimizedContent : data.markdownContent;
             const blob = new Blob([content], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1153,14 +1216,14 @@ function getPreviewHtml(
         }
 
         function buildTree(node, parentElement) {
-            if (!node.children || node.children.length === 0) return;
+            if (!node?.children || node.children.length === 0) return;
             
             const ul = document.createElement('ul');
             for (const child of node.children) {
                 const li = document.createElement('li');
                 const icon = child.type === 'directory' ? '📁' : '📄';
                 const nameClass = child.type === 'directory' ? 'directory-name' : 'file-name';
-                li.innerHTML = '<span class="icon">' + icon + '</span><span class="' + nameClass + '">' + child.name + '</span>';
+                li.innerHTML = \`<span class="icon">\${icon}</span><span class="\${nameClass}">\${child.name}</span>\`;
                 
                 if (child.children && child.children.length > 0) {
                     buildTree(child, li);
@@ -1179,7 +1242,7 @@ function getPreviewHtml(
         if (data.fileTree && data.fileTree.children && data.fileTree.children.length > 0) {
             buildTree(data.fileTree, treeRootEl);
         } else {
-            treeRootEl.innerHTML = '<p style="opacity: 0.7; font-style: italic;">No files to display</p>';
+            treeRootEl.innerHTML = '<p style="opacity: 0.7; font-style: italic;">No files selected.</p>';
         }
         
         // Set initial content
