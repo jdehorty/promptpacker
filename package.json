@@ -1,0 +1,102 @@
+{
+  "name": "promptpacker",
+  "displayName": "PromptPacker",
+  "version": "1.0.0",
+  "description": "Pack It. Prompt It. Ship It. 🚀\n\nPromptPacker is the ultimate VS Code extension for AI developers and prompt engineers. Instantly combine and organize your code files into perfectly formatted prompts for ChatGPT, Claude, and other LLMs. Transform scattered code into context-rich prompts with one click.\n\nFeatures:\n• Pack Code to Clipboard: Instantly combine multiple files for AI prompts\n• Smart Context Preservation: Maintains file structure and relationships\n• Multi-file Selection: Right-click multiple files for batch processing\n• AI-Optimized Output: Perfect formatting for LLM consumption",
+  "main": "dist/extension.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "compile": "tsc -p .",
+    "vscode:prepublish": "npm run compile",
+    "vscode:package": "vsce package"
+  },
+  "author": {
+    "name": "PromptPacker Team",
+    "email": "hello@promptpacker.dev"
+  },
+  "publisher": "PromptPacker",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/promptpacker/promptpacker-vscode.git"
+  },
+  "homepage": "https://github.com/promptpacker/promptpacker-vscode",
+  "bugs": {
+    "url": "https://github.com/promptpacker/promptpacker-vscode/issues"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "prompt",
+    "chatgpt",
+    "claude",
+    "prompt-engineering",
+    "context",
+    "code-combine",
+    "ai-tools",
+    "machine-learning",
+    "openai",
+    "anthropic",
+    "prompt-crafting",
+    "code-packing"
+  ],
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other",
+    "Snippets",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onCommand:promptpacker.packCode",
+    "onCommand:promptpacker.packCodeWithContext"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "promptpacker.packCode",
+        "title": "📦 Pack Code for AI",
+        "category": "PromptPacker"
+      },
+      {
+        "command": "promptpacker.packCodeWithContext",
+        "title": "🎯 Pack Code with File Context",
+        "category": "PromptPacker"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "promptpacker.packCode",
+          "group": "promptpacker@1"
+        },
+        {
+          "command": "promptpacker.packCodeWithContext",
+          "group": "promptpacker@2"
+        }
+      ],
+      "explorer/context:multi": [
+        {
+          "command": "promptpacker.packCode",
+          "group": "promptpacker@1"
+        },
+        {
+          "command": "promptpacker.packCodeWithContext",
+          "group": "promptpacker@2"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.92.0",
+    "typescript": "^5.5.4",
+    "vsce": "^2.6.3"
+  },
+  "icon": "images/logo.png"
+}

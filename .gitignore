@@ -1,0 +1,10 @@
+# .gitignore
+
+# Ignore node_modules directory
+node_modules/
+dist/
+*.vsix
+.vscode-test/
+*.log
+.DS_Store
+.env
