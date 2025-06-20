@@ -1,46 +1,24 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { minimatch } from 'minimatch';
+import {
+  packCodeFromWorkspace,
+  generateCombinedCode,
+  countTokens,
+  shouldIncludeFile,
+  buildFileTree,
+} from './core/logic';
 
 // ==========================================
 // Types & Interfaces
 // ==========================================
 
-interface PromptPackerConfig {
-  ignore: string[];
-  highPriorityPatterns: string[];
-  includeExtensions: string[];
-  includePatterns: string[];
-  maxFileSize: string;
-  maxTotalSize: string;
-  preserveStructure: boolean;
-  outputFormat: 'ai-optimized' | 'standard' | 'markdown';
-  tokenModel: 'gpt-4' | 'gpt-3.5-turbo' | 'llama' | 'claude' | 'estimate';
-}
-
-interface ProcessedFiles {
-  allFilePaths: string[];
-  totalSize: number;
-  totalFiles: number;
-  debugInfo?: FileFilterDebugInfo;
-  fileTree?: DirectoryNode;
-}
-
-interface FileFilterDebugInfo {
-  totalFilesScanned: number;
-  includedFiles: Array<{ path: string; reason: string }>;
-  excludedFiles: Array<{ path: string; reason: string }>;
-  sizeExceededFiles: Array<{ path: string; size: number; maxSize: number }>;
-  errors: Array<{ path: string; error: string }>;
-}
-
-interface DirectoryNode {
-  name: string;
-  type: 'file' | 'directory';
-  path: string;
-  children?: DirectoryNode[];
-}
+import type {
+  PromptPackerConfig,
+  ProcessedFiles,
+  FileFilterDebugInfo,
+  DirectoryNode,
+} from './types';
 
 let lastFilterDebugInfo: FileFilterDebugInfo | undefined;
 
@@ -268,6 +246,15 @@ function handleShowLastFilterReport() {
 async function processUris(args: any[], workspaceRoot: string): Promise<ProcessedFiles> {
   const uris = extractUniqueUris(args);
   const config = getConfig();
+
+  // If no specific URIs provided, process the entire workspace
+  if (uris.length === 0) {
+    const result = await packCodeFromWorkspace(workspaceRoot, config);
+    lastFilterDebugInfo = result.debugInfo;
+    return result;
+  }
+
+  // Process specific URIs using the original logic but with improved file filtering
   const allFilePaths: string[] = [];
   let totalSize = 0;
 
@@ -284,13 +271,16 @@ async function processUris(args: any[], workspaceRoot: string): Promise<Processe
     try {
       const stats = await fs.promises.stat(uri.fsPath);
       if (stats.isDirectory()) {
-        const folderResult = await traverseFolderWithDebug(
-          uri.fsPath,
-          workspaceRoot,
-          config,
-          debugInfo
-        );
-        allFilePaths.push(...folderResult.files);
+        // Use the robust core logic for directory processing
+        const folderResult = await packCodeFromWorkspace(uri.fsPath, config);
+        allFilePaths.push(...folderResult.allFilePaths);
+
+        // Merge debug info
+        debugInfo.totalFilesScanned += folderResult.debugInfo?.totalFilesScanned || 0;
+        debugInfo.includedFiles.push(...(folderResult.debugInfo?.includedFiles || []));
+        debugInfo.excludedFiles.push(...(folderResult.debugInfo?.excludedFiles || []));
+        debugInfo.sizeExceededFiles.push(...(folderResult.debugInfo?.sizeExceededFiles || []));
+        debugInfo.errors.push(...(folderResult.debugInfo?.errors || []));
       } else {
         debugInfo.totalFilesScanned++;
         const relativePath = path.relative(workspaceRoot, uri.fsPath).replace(/\\/g, '/');
@@ -310,30 +300,13 @@ async function processUris(args: any[], workspaceRoot: string): Promise<Processe
     }
   }
 
-  // Calculate total size and apply size limits
-  const maxTotalBytes = parseSize(config.maxTotalSize);
-  let currentSize = 0;
-  const filteredPaths: string[] = [];
-
+  // Calculate total size for final result
   for (const filePath of allFilePaths) {
     try {
       const stats = await fs.promises.stat(filePath);
-      if (currentSize + stats.size <= maxTotalBytes) {
-        filteredPaths.push(filePath);
-        currentSize += stats.size;
-        totalSize += stats.size;
-      } else {
-        const relativePath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
-        debugInfo.sizeExceededFiles.push({
-          path: relativePath,
-          size: stats.size,
-          maxSize: maxTotalBytes - currentSize,
-        });
-      }
+      totalSize += stats.size;
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      debugInfo.errors.push({ path: filePath, error: errorMsg });
-      console.error(`Error checking file size for ${filePath}:`, error);
+      console.error(`Error getting file size for ${filePath}:`, error);
     }
   }
 
@@ -341,116 +314,12 @@ async function processUris(args: any[], workspaceRoot: string): Promise<Processe
   lastFilterDebugInfo = debugInfo;
 
   return {
-    allFilePaths: filteredPaths,
+    allFilePaths,
     totalSize,
-    totalFiles: filteredPaths.length,
+    totalFiles: allFilePaths.length,
     debugInfo,
-    fileTree: buildFileTree(filteredPaths, workspaceRoot),
+    fileTree: buildFileTree(allFilePaths, workspaceRoot),
   };
-}
-
-async function generateCombinedCode(
-  filePaths: string[],
-  workspaceRoot: string,
-  config: PromptPackerConfig,
-  includeContext: boolean
-): Promise<string> {
-  const results: string[] = [];
-
-  if (config.outputFormat === 'ai-optimized') {
-    results.push('<codebase_analysis>');
-
-    if (includeContext) {
-      results.push('  <project_overview>');
-      results.push(`    <name>${path.basename(workspaceRoot)}</name>`);
-      results.push(`    <total_files>${filePaths.length}</total_files>`);
-      results.push('  </project_overview>');
-      results.push('');
-      results.push('  <source_files>');
-    }
-  }
-
-  for (const filePath of filePaths) {
-    try {
-      const fileContent = await fs.promises.readFile(filePath, 'utf8');
-      const relativePath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
-
-      if (config.outputFormat === 'ai-optimized') {
-        results.push(`    <file path="${relativePath}">`);
-        results.push(fileContent.trim());
-        results.push('    </file>');
-        results.push('');
-      } else if (config.outputFormat === 'markdown') {
-        results.push(`## ${relativePath}`);
-        results.push('```' + getFileExtensionForMarkdown(filePath));
-        results.push(fileContent.trim());
-        results.push('```');
-        results.push('');
-      } else {
-        // Standard format
-        if (config.preserveStructure || includeContext) {
-          results.push(`// ${relativePath}`);
-        }
-        results.push(fileContent.trim());
-        results.push('');
-      }
-    } catch (error) {
-      console.error(`Error reading file ${filePath}:`, error);
-    }
-  }
-
-  if (config.outputFormat === 'ai-optimized') {
-    if (includeContext) {
-      results.push('  </source_files>');
-    }
-    results.push('</codebase_analysis>');
-  }
-
-  return results.join('\n');
-}
-
-// ==========================================
-// Token Counting Utilities
-// ==========================================
-
-/**
- * Universal token counting using gpt-tokenizer as baseline
- * This provides accurate counts for OpenAI models and reasonable estimates for others
- */
-async function countTokens(text: string, model: string): Promise<number> {
-  try {
-    // Import gpt-tokenizer dynamically to handle potential import issues
-    const { countTokens: gptCountTokens } = await import('gpt-tokenizer');
-    
-    // Use gpt-tokenizer as universal baseline for all models
-    // This is the widely accepted approach since:
-    // 1. It's the most accurate tokenizer available
-    // 2. Provides reasonable estimates for non-OpenAI models
-    // 3. Most AI applications primarily target OpenAI models
-    const tokenCount = gptCountTokens(text);
-    
-    // Apply model-specific adjustments if needed
-    switch (model) {
-      case 'gpt-4':
-      case 'gpt-3.5-turbo':
-        return tokenCount; // Direct count for OpenAI models
-      case 'claude':
-        return Math.ceil(tokenCount * 1.0); // Claude is very similar to GPT tokenization
-      case 'llama':
-        return Math.ceil(tokenCount * 1.1); // LLaMA tends to use slightly more tokens
-      default:
-        return tokenCount; // Use GPT tokenization as universal baseline
-    }
-  } catch (error) {
-    console.warn('gpt-tokenizer failed, falling back to estimation:', error);
-    return estimateTokensSimple(text);
-  }
-}
-
-function estimateTokensSimple(text: string): number {
-  // Fallback estimation when gpt-tokenizer is unavailable
-  // Based on empirical analysis: ~3.5 characters per token on average
-  return Math.ceil(text.length / 3.5);
 }
 
 // ==========================================
@@ -540,159 +409,6 @@ function getConfig(): PromptPackerConfig {
   };
 }
 
-function shouldIncludeFile(
-  relativePath: string,
-  config: PromptPackerConfig,
-  fileSize: number
-): { include: boolean; reason: string } {
-  // 1. Check file size limit
-  const maxFileBytes = parseSize(config.maxFileSize);
-  if (fileSize > maxFileBytes) {
-    return {
-      include: false,
-      reason: `File size (${(fileSize / 1024).toFixed(1)} KB) exceeds max size (${config.maxFileSize})`,
-    };
-  }
-
-  // 2. Check ignore patterns first - this is a hard "no"
-  for (const pattern of config.ignore) {
-    if (minimatch(relativePath, pattern, { dot: true })) {
-      return {
-        include: false,
-        reason: `Ignored by pattern: "${pattern}"`,
-      };
-    }
-  }
-
-  // 3. Check for high-priority files - these are almost always relevant
-  for (const pattern of config.highPriorityPatterns) {
-    if (minimatch(relativePath, pattern, { dot: true })) {
-      return {
-        include: true,
-        reason: `High-priority match: "${pattern}"`,
-      };
-    }
-  }
-
-  // 4. Check if file matches user-defined include patterns
-  if (config.includePatterns.length > 0) {
-    for (const pattern of config.includePatterns) {
-      if (minimatch(relativePath, pattern, { dot: true })) {
-        return {
-          include: true,
-          reason: `Matched include pattern: "${pattern}"`,
-        };
-      }
-    }
-  }
-
-  // 5. Check file extension as a fallback
-  const fileExtension = getFileExtension(relativePath);
-  if (fileExtension && config.includeExtensions.includes(fileExtension)) {
-    return {
-      include: true,
-      reason: `Extension ".${fileExtension}" is in include list`,
-    };
-  }
-
-  // 6. If none of the inclusion criteria are met, exclude the file
-  return {
-    include: false,
-    reason: `No matching criteria (extension: .${fileExtension || 'none'}, include patterns: ${config.includePatterns.length}, extensions: ${config.includeExtensions.length})`,
-  };
-}
-
-function getFileExtension(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase();
-  return ext || '';
-}
-
-async function traverseFolderWithDebug(
-  folderPath: string,
-  root: string,
-  config: PromptPackerConfig,
-  debugInfo: FileFilterDebugInfo
-): Promise<{ files: string[] }> {
-  const results: string[] = [];
-
-  try {
-    const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(folderPath, entry.name);
-      const relativePath = path.relative(root, fullPath).replace(/\\/g, '/');
-
-      if (entry.isDirectory()) {
-        // Check if directory should be ignored
-        let shouldIgnoreDir = false;
-        let ignoreReason = '';
-
-        for (const pattern of config.ignore) {
-          if (
-            minimatch(relativePath, pattern, { dot: true }) ||
-            minimatch(relativePath + '/', pattern, { dot: true })
-          ) {
-            shouldIgnoreDir = true;
-            ignoreReason = pattern;
-            break;
-          }
-        }
-
-        if (shouldIgnoreDir) {
-          // Count all files in ignored directory for debug info
-          const ignoredCount = await countFilesInDirectory(fullPath);
-          debugInfo.excludedFiles.push({
-            path: relativePath + '/',
-            reason: `Directory ignored by pattern: "${ignoreReason}" (${ignoredCount} files skipped)`,
-          });
-        } else {
-          const subResult = await traverseFolderWithDebug(fullPath, root, config, debugInfo);
-          results.push(...subResult.files);
-        }
-      } else if (entry.isFile()) {
-        debugInfo.totalFilesScanned++;
-        try {
-          const stats = await fs.promises.stat(fullPath);
-          const decision = shouldIncludeFile(relativePath, config, stats.size);
-
-          if (decision.include) {
-            results.push(fullPath);
-            debugInfo.includedFiles.push({ path: relativePath, reason: decision.reason });
-          } else {
-            debugInfo.excludedFiles.push({ path: relativePath, reason: decision.reason });
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-          debugInfo.errors.push({ path: relativePath, error: errorMsg });
-        }
-      }
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    debugInfo.errors.push({ path: folderPath, error: `Failed to read directory: ${errorMsg}` });
-    console.error(`Error traversing folder ${folderPath}:`, error);
-  }
-
-  return { files: results };
-}
-
-async function countFilesInDirectory(dirPath: string): Promise<number> {
-  let count = 0;
-  try {
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile()) {
-        count++;
-      } else if (entry.isDirectory()) {
-        count += await countFilesInDirectory(path.join(dirPath, entry.name));
-      }
-    }
-  } catch {
-    // Ignore errors when counting
-  }
-  return count;
-}
-
 function extractUniqueUris(args: any[]): vscode.Uri[] {
   const uris: vscode.Uri[] = [];
   const seen = new Set<string>();
@@ -718,98 +434,6 @@ function extractUniqueUris(args: any[]): vscode.Uri[] {
 
 function getWorkspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-}
-
-function parseSize(sizeStr: string): number {
-  const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*(kb|mb|gb)?$/i);
-  if (!match) return 100 * 1024; // Default 100KB
-
-  const value = parseFloat(match[1]);
-  const unit = (match[2] || 'kb').toLowerCase();
-
-  switch (unit) {
-    case 'gb':
-      return value * 1024 * 1024 * 1024;
-    case 'mb':
-      return value * 1024 * 1024;
-    case 'kb':
-      return value * 1024;
-    default:
-      return value;
-  }
-}
-
-function getFileExtensionForMarkdown(filePath: string): string {
-  const ext = path.extname(filePath).slice(1);
-  const extensionMap: { [key: string]: string } = {
-    js: 'javascript',
-    ts: 'typescript',
-    jsx: 'javascript',
-    tsx: 'typescript',
-    py: 'python',
-    rb: 'ruby',
-    php: 'php',
-    java: 'java',
-    cpp: 'cpp',
-    c: 'c',
-    cs: 'csharp',
-    go: 'go',
-    rs: 'rust',
-    swift: 'swift',
-    kt: 'kotlin',
-  };
-  return extensionMap[ext] || ext || 'text';
-}
-
-function buildFileTree(filePaths: string[], root: string): DirectoryNode {
-  const rootNode: DirectoryNode = {
-    name: path.basename(root),
-    type: 'directory',
-    path: '',
-    children: [],
-  };
-
-  for (const filePath of filePaths) {
-    const relativePath = path.relative(root, filePath).replace(/\\/g, '/');
-    const parts = relativePath.split('/');
-    let currentNode = rootNode;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isFile = i === parts.length - 1;
-
-      let childNode = currentNode.children?.find(c => c.name === part);
-
-      if (!childNode) {
-        childNode = {
-          name: part,
-          type: isFile ? 'file' : 'directory',
-          path: parts.slice(0, i + 1).join('/'),
-        };
-        if (!isFile) {
-          childNode.children = [];
-        }
-        currentNode.children?.push(childNode);
-      }
-      currentNode = childNode;
-    }
-  }
-
-  // Sort children at each level: directories first, then alphabetically
-  const sortChildren = (node: DirectoryNode) => {
-    if (node.children) {
-      node.children.sort((a, b) => {
-        if (a.type !== b.type) {
-          return a.type === 'directory' ? -1 : 1;
-        }
-        return a.name.localeCompare(b.name);
-      });
-      node.children.forEach(sortChildren);
-    }
-  };
-
-  sortChildren(rootNode);
-  return rootNode;
 }
 
 function showDetailedFilteringReport(
@@ -934,7 +558,7 @@ function getPreviewHtml(
 
   // Generate a nonce for CSP
   const nonce = Math.random().toString(36).substring(2, 15);
-  
+
   // Properly escape the JSON data for HTML context
   const escapedJsonData = JSON.stringify(webviewData)
     .replace(/</g, '\\u003c')

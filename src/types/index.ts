@@ -11,11 +11,22 @@ export interface FilterConfig {
 
 export interface PromptPackerConfig {
   ignore: string[];
-  include: string[];
+  highPriorityPatterns: string[];
+  includeExtensions: string[];
+  includePatterns: string[];
   maxFileSize: string;
   maxTotalSize: string;
   preserveStructure: boolean;
   outputFormat: 'ai-optimized' | 'standard' | 'markdown';
+  tokenModel:
+    | 'gpt-4o'
+    | 'o3'
+    | 'o3-mini'
+    | 'claude-3.7-sonnet'
+    | 'claude-4'
+    | 'gemini-2.5-pro'
+    | 'deepseek-r1'
+    | 'estimate';
 }
 
 export interface FileMetadata {
@@ -67,4 +78,20 @@ export interface ProcessingResult {
   totalSize: number;
   tokenEstimate: number;
   formattedOutput: string;
+}
+
+export interface ProcessedFiles {
+  allFilePaths: string[];
+  totalSize: number;
+  totalFiles: number;
+  debugInfo?: FileFilterDebugInfo;
+  fileTree?: DirectoryNode;
+}
+
+export interface FileFilterDebugInfo {
+  totalFilesScanned: number;
+  includedFiles: Array<{ path: string; reason: string }>;
+  excludedFiles: Array<{ path: string; reason: string }>;
+  sizeExceededFiles: Array<{ path: string; size: number; maxSize: number }>;
+  errors: Array<{ path: string; error: string }>;
 }
